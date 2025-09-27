@@ -10,6 +10,7 @@ requests
 pypdf
 langchain-anthropic
 duckduckgo-search
+midjourney-api
 langchain-chroma
 faiss-cpu
 chromadb
