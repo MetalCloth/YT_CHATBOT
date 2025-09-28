@@ -28,6 +28,13 @@ class Store:
         """Ingesting summarized_docs"""
         try:
             if summarized_docs:
+                for doc in summarized_docs:
+                    id_data=doc.metadata['raw_chunks_ids']
+                    if isinstance(id_data, list):
+                        print("Found a list, converting to string...")
+                        doc.metadata['raw_chunks_ids'] = ",".join(id_data)
+
+
                 self.summarised_vectordb.add_documents(summarized_docs)
         
         except Exception as e:

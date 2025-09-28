@@ -49,12 +49,15 @@ def ingesting_video(state:Youtube):
 
     preprocess=PreProcessing(state['video_id'])
     preprocess.transcribing_video()
-    raw_docs=preprocess.organising_transcript()
-    summarized_docs=preprocess.summarizing_transcript(raw_docs)
+    summary_sections = preprocess.organising_summary_transcript()
+    raw_docs = preprocess.recursive_chunk_snippets(chunk_size=500, chunk_overlap=100)
+    print(f"Created {len(raw_docs)} raw document chunks.")
+    summaries_mapped = preprocess.map_summaries_to_raw_by_time(summary_sections, raw_docs)
+    
 
     db_store = Store()
     db_store.ingesting_raw_docs(raw_docs)
-    db_store.ingesting_summarized_docs(summarized_docs)
+    db_store.ingesting_summarized_docs(summaries_mapped)
 
 
 
@@ -68,16 +71,10 @@ def condition(state:Youtube):
     chain=prompt | model
 
     response=chain.invoke({'text':state['question']})
-
-    if response.content.lower()=='specific_question':
-        return 'raw'
-    
-    if response.content.lower()=='summary_request':
-        return 'summary'
     
 
-    
-    
+
+    return 'summary'
 
 # @tools
 def vector_search_for_summ_db(state:Youtube):
@@ -160,7 +157,7 @@ if __name__=="__main__":
 
     
     result=app.invoke({
-        'video_id':'HdPzOWlLrbE',
+        'video_id':'-8NURSdnTcg',
         'documents':[],
         'question':query,
         'answer':""
