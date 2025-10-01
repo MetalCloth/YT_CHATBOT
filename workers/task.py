@@ -155,10 +155,6 @@ def vector_search_for_raw_db(state:Youtube):
 
         # texts = [all_docs[i] for i in all_raw_ids if i in all_docs]
 
-    
-    
-
-
 
     # response=raw_retriever.invoke(state['question'])
 
@@ -185,14 +181,17 @@ def generate_response(state:Youtube):
 
 graph=StateGraph(Youtube)
 
+fake_graph=StateGraph(Youtube)
+
 graph.add_node('ingestion',ingesting_video)
 graph.add_node('raw_db',vector_search_for_raw_db)
 graph.add_node('summ_db',vector_search_for_summ_db)
 graph.add_node('generate_response',generate_response)
 
-graph.add_edge(START,'ingestion')
+fake_graph.add_edge(START,'ingestion')
+fake_graph.add_edge('ingestion',END)
 
-graph.add_conditional_edges('ingestion',condition,
+graph.add_conditional_edges(START,condition,
                             {
                                 'raw':'raw_db',
                                 'summary':'summ_db'
@@ -207,6 +206,7 @@ graph.add_edge('generate_response',END)
 app=graph.compile()
 
 
+
 if __name__=="__main__":
 
     from IPython.display import Image,display
@@ -217,12 +217,17 @@ if __name__=="__main__":
     query=input('Enter your query')
 
     
-    result=app.invoke({
-        'video_id':'-8NURSdnTcg',
-        'documents':[],
-        'question':query,
-        'answer':""
-    })
+    ingesting_video(Youtube({'video_id':'-8NURSdnTcg','documents':[],'question':'','answer':''}))
 
+    while True:
+        query=input('Enter your query')
 
-    print(result['answer'])
+        result=app.invoke({
+            'video_id':'-8NURSdnTcg',
+            'documents':[],
+            'question':query,
+            'answer':""
+        })
+        print('-----ANSWER-----')
+
+        print(result['answer'])
