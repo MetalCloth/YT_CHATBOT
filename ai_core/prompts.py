@@ -3,21 +3,47 @@ from langchain_core.prompts import ChatPromptTemplate
 
 def summarizing_prompt():
     return ChatPromptTemplate.from_template(
-    '''You are a summarizer agent who will summarize the given text AND ALSO JUST GIVE SUMMARY DONT TRY TO MAKE CONVERSATION LIKE 'HERE IS THE SUMMARY OF THE TEXT BULLSHIT' THING AND ALSO MAKE SUMMARY SUCH THAT MAIN THINGS ARE NOT LOST 
-    {doc}
+    '''YOU ARE AN ANSWERING BOT WHO WILL ANSWER THE QUESTION BASED ON THE PROVIDED CONTEXT. ONLY GIVE ANSWER IN DETAIL RELATED TO THE ASKED QUESTION AND NOTHING MORE
+    QUESTION:
+    {ques}
+
+    CONTEXT:
+    {context}
     '''
 )
 
 
 def conditional_prompt():
     return ChatPromptTemplate.from_template(
-    '''You are an expert at classifying user questions. Your job is to determine if the user is asking a "specific_question" or a "summary_request".
-- "specific_question" is for when the user is asking about a precise detail like u would need very very indepth answer for it.
-- "summary_request" is for when the user is asking for a broader explanation of a topic or concept mentioned in the video.
-Only respond with the category name and nothing else. HERE IS THE TEXT BELOW
-    {text}
-    '''
-)   
+    """
+You are an expert classifier for video questions.  
+Your job: read the user question and decide **exactly one label**: `summary_request` or `specific_question`.  
+This will determine which database to use:
+
+- `summary_request` → use the **summary DB** (broad, conceptual overview, main points).  
+- `specific_question` → use the **raw DB** (detailed, step-by-step, exact facts, timestamps, code, numbers, examples).
+
+RULES:
+
+1) Classify as `specific_question` if the user asks for:
+   - Exact steps, commands, code, formulas, calculations.
+   - Specific examples, timestamps, quotes, logs, or debugging info.
+   - Anything that cannot be answered from a summary alone.
+
+2) Classify as `summary_request` if the user asks for:
+   - High-level explanations, main points, or general understanding.
+   - Overviews, themes, intuition, or broad concepts.
+   - Anything that can be answered without exact details.
+
+TIE-BREAKER:
+- If the question contains both broad and specific aspects, choose `specific_question`.
+
+**Output exactly one token**: `summary_request` or `specific_question`. No explanation, no quotes, no punctuation.
+
+USER QUESTION:
+{text}
+"""
+    )
 
 def dividing_prompt():
     return ChatPromptTemplate.from_template("""

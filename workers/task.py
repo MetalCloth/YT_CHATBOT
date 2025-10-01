@@ -71,10 +71,17 @@ def condition(state:Youtube):
     chain=prompt | model
 
     response=chain.invoke({'text':state['question']})
+
+    print(response.content)
+
+    if response.content.lower()=='summary_request':
+        return 'summary'
     
-
-
-    return 'summary'
+    elif response.content.lower()=='specific_question':
+        return 'raw'
+    
+    
+    # return 'summary'
 
 # @tools
 def vector_search_for_summ_db(state:Youtube):
@@ -95,28 +102,83 @@ def vector_search_for_raw_db(state:Youtube):
     extract the list of original chunk IDs (raw_chunks_id).
     """
 
-    raw_retriever=Retriever().raw_retriever(k=3)
+    """I will use summary retriever then i will use metaids from it to check the raw_retrirver 
+    one and i will extract text from each metadata and boom"""
 
-    response=raw_retriever.invoke(state['question'])
+
+    # raw_retriever=Retriever().summarized_retriever(k=3)
+    # pi=[]
+
+    # for i in raw_retriever:
+    #     x=i.metadata['raw_chunks_ids']
+    #     pi=x.split(',')
+
+    # if len(pi) > 5:
+    #         pi = pi[:5]
+    
+    
+    # for i in pi:
+    print("HELLO WORLD")
+
+
+    raw_retriever = Retriever().summarized_retriever(k=3)
+    all_raw_ids = []
+    raw_retriever=raw_retriever.invoke(state['question'])
+
+
+
+    for doc in raw_retriever:
+        raw_ids = doc.metadata.get('raw_chunks_ids', [])
+        # Always ensure it's a list
+        if isinstance(raw_ids, str):
+            raw_ids = raw_ids.split(',')
+        # Limit number of chunks per summary doc
+        if len(raw_ids) > 7:
+            raw_ids = raw_ids[:7]
+    
+
+        all_raw_ids.extend(raw_ids)
+    
+    all_raw_ids = list(dict.fromkeys(all_raw_ids))[:10]
+
+    store = Store()
+    raw_db = store.unsummarised_vectordb
+
+    # Fetch all metadata
+    all_docs = raw_db.get(include=['metadatas', 'documents'])  # 'documents' = page_content
+
+    # Build a lookup dict by ID
+    raw_lookup = {meta['id']: doc for meta, doc in zip(all_docs['metadatas'], all_docs['documents'])}
+
+    # Get texts for the selected raw IDs
+    texts = [raw_lookup[i] for i in all_raw_ids if i in raw_lookup]
+
+        # texts = [all_docs[i] for i in all_raw_ids if i in all_docs]
 
     
-    state['documents'].append(response)
+    
+
+
+
+    # response=raw_retriever.invoke(state['question'])
+
+    """response gives a document brother"""
+
+    
+    state['documents'].append(texts)
     return state
 
 
 def generate_response(state:Youtube):
-
     model=ChatAnthropic(model='claude-sonnet-4-20250514')
     prompt=summarizing_prompt()
 
     chain=prompt | model
 
-
-    response=chain.invoke({'doc':state['documents']})
+    response=chain.invoke({'ques':state['question'],'context':state['documents']})
 
     state['answer']=response.content
     return state
-
 
 
 
@@ -148,7 +210,6 @@ app=graph.compile()
 if __name__=="__main__":
 
     from IPython.display import Image,display
-
     
     display(app.get_graph().draw_ascii())
     
