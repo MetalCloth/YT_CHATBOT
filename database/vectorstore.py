@@ -8,10 +8,10 @@ from langchain_chroma import Chroma
 class Store:
     """Stores into 2 vectorstores one for summarized one for raw and they are interconnected using uuid"""
 
-    def __init__(self):
+    def __init__(self,video_id):
         self.embeddings=OllamaEmbeddings(model='snowflake-arctic-embed:latest')
-        self.unsummarised_vectordb=Chroma(collection_name="un_summarized_db",embedding_function=self.embeddings,persist_directory='./unsummarised_docs')
-        self.summarised_vectordb=Chroma(collection_name="summarized_db",embedding_function=self.embeddings,persist_directory='./summarised_docs')
+        self.unsummarised_vectordb=Chroma(collection_name=video_id,embedding_function=self.embeddings,persist_directory='./unsummarised_docs')
+        self.summarised_vectordb=Chroma(collection_name=video_id,embedding_function=self.embeddings,persist_directory='./summarised_docs')
 
     def ingesting_raw_docs(self,raw_docs):
         """Ingesting raw_docs"""
@@ -46,8 +46,8 @@ class Store:
 class Retriever:
     """Makes a fucking retriever to do shits in this"""
 
-    def __init__(self):
-        self.vectorstore=Store()
+    def __init__(self,video_id):
+        self.vectorstore=Store(video_id)
         
     def raw_retriever(self,k=2):
         """End result returns retriever"""

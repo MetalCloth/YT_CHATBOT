@@ -12,16 +12,25 @@ def summarizing_prompt():
     '''
 )
 
+def chat_prompt():
+    return ChatPromptTemplate.from_template(
+        '''You are just a chatbot u would do basic convo with the user just give output and dont make urself soundl ike u are giving question answer be like a human,
+        USER MESSAGE:
+        {msg}
+        '''
+    )
+
 
 def conditional_prompt():
     return ChatPromptTemplate.from_template(
     """
-You are an expert classifier for video questions.  
-Your job: read the user question and decide **exactly one label**: `summary_request` or `specific_question`.  
-This will determine which database to use:
+You are an expert classifier for video-related conversations.  
+Your job: read the user input and decide **exactly one label**:  
+- `summary_request`  
+- `specific_question`  
+- `basic_conversation`  
 
-- `summary_request` → use the **summary DB** (broad, conceptual overview, main points).  
-- `specific_question` → use the **raw DB** (detailed, step-by-step, exact facts, timestamps, code, numbers, examples).
+This classification determines which database or handling path to use.
 
 RULES:
 
@@ -35,10 +44,16 @@ RULES:
    - Overviews, themes, intuition, or broad concepts.
    - Anything that can be answered without exact details.
 
+3) Classify as `basic_conversation` if the user:
+   - Is engaging in small talk, greetings, or casual discussion.
+   - Asks off-topic or meta questions (e.g., about tools, preferences, jokes, chatting).
+   - Sends input not related to the video content at all.
+
 TIE-BREAKER:
 - If the question contains both broad and specific aspects, choose `specific_question`.
+- If it contains conversation mixed with actual video-related intent, prefer `summary_request` or `specific_question` as applicable.
 
-**Output exactly one token**: `summary_request` or `specific_question`. No explanation, no quotes, no punctuation.
+**Output exactly one token**: `summary_request` or `specific_question` or `basic_conversation`. No explanation, no quotes, no punctuation.
 
 USER QUESTION:
 {text}

@@ -3,6 +3,7 @@ langchain-core
 langchain-community
 langchain-groq
 langchainhub
+langchain-google-genai 
 streamlit
 PyPDF2
 python-dotenv

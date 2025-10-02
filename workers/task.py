@@ -1,6 +1,8 @@
 from langchain_anthropic import ChatAnthropic
+from langchain_ollama import ChatOllama
+from langchain_google_genai import ChatGoogleGenerativeAI
 import os
-from ai_core.prompts import conditional_prompt,summarizing_prompt
+from ai_core.prompts import conditional_prompt,summarizing_prompt,chat_prompt
 from dotenv import load_dotenv
 from langchain import tools
 from langgraph.graph import START,END,StateGraph
@@ -55,7 +57,7 @@ def ingesting_video(state:Youtube):
     summaries_mapped = preprocess.map_summaries_to_raw_by_time(summary_sections, raw_docs)
     
 
-    db_store = Store()
+    db_store = Store(state['video_id'])
     db_store.ingesting_raw_docs(raw_docs)
     db_store.ingesting_summarized_docs(summaries_mapped)
 
@@ -64,7 +66,11 @@ def ingesting_video(state:Youtube):
 def condition(state:Youtube):
     assert state['question']
 
-    model=ChatAnthropic(model='claude-sonnet-4-20250514')
+    # model=ChatAnthropic(model='claude-sonnet-4-20250514')
+    # model=ChatOllama(model='llama3')
+    model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+    
+    # model=ChatGoogleGenerativeAI(model='llama3')
 
     prompt=conditional_prompt()
 
@@ -80,6 +86,9 @@ def condition(state:Youtube):
     elif response.content.lower()=='specific_question':
         return 'raw'
     
+    elif response.content.lower()=='basic_conversation':
+        return 'convo'
+    
     
     # return 'summary'
 
@@ -89,7 +98,7 @@ def vector_search_for_summ_db(state:Youtube):
     extract the list of original chunk IDs (raw_chunks_id).
     """
 
-    summ_retriever=Retriever().summarized_retriever(k=3)
+    summ_retriever=Retriever(video_id=state['video_id']).summarized_retriever(k=3)
 
     response=summ_retriever.invoke(state['question'])
     state['documents'].append(response)
@@ -121,7 +130,7 @@ def vector_search_for_raw_db(state:Youtube):
     print("HELLO WORLD")
 
 
-    raw_retriever = Retriever().summarized_retriever(k=3)
+    raw_retriever = Retriever(video_id=state['video_id']).summarized_retriever(k=3)
     all_raw_ids = []
     raw_retriever=raw_retriever.invoke(state['question'])
 
@@ -141,7 +150,7 @@ def vector_search_for_raw_db(state:Youtube):
     
     all_raw_ids = list(dict.fromkeys(all_raw_ids))[:10]
 
-    store = Store()
+    store = Store(state['video_id'])
     raw_db = store.unsummarised_vectordb
 
     # Fetch all metadata
@@ -164,9 +173,27 @@ def vector_search_for_raw_db(state:Youtube):
     state['documents'].append(texts)
     return state
 
+def basic_conversation(state:Youtube):
+    # model=ChatAnthropic(model='claude-sonnet-4-20250514')
+    # model=ChatOllama(model='llama3')
+    model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+
+
+    prompt=chat_prompt()
+
+    chain=prompt | model
+    """Gonna give this shit convo history"""
+    response=chain.invoke({'msg':state['question']})
+
+    state['answer']=response.content
+
+    return state
 
 def generate_response(state:Youtube):
-    model=ChatAnthropic(model='claude-sonnet-4-20250514')
+    # model=ChatAnthropic(model='claude-sonnet-4-20250514')
+    # model=ChatOllama(model='llama3')
+    model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+
     prompt=summarizing_prompt()
 
     chain=prompt | model
@@ -174,10 +201,8 @@ def generate_response(state:Youtube):
     response=chain.invoke({'ques':state['question'],'context':state['documents']})
 
     state['answer']=response.content
+
     return state
-
-
-
 
 graph=StateGraph(Youtube)
 
@@ -187,6 +212,7 @@ graph.add_node('ingestion',ingesting_video)
 graph.add_node('raw_db',vector_search_for_raw_db)
 graph.add_node('summ_db',vector_search_for_summ_db)
 graph.add_node('generate_response',generate_response)
+graph.add_node('basic_conversation',basic_conversation)
 
 fake_graph.add_edge(START,'ingestion')
 fake_graph.add_edge('ingestion',END)
@@ -194,12 +220,15 @@ fake_graph.add_edge('ingestion',END)
 graph.add_conditional_edges(START,condition,
                             {
                                 'raw':'raw_db',
-                                'summary':'summ_db'
+                                'summary':'summ_db',
+                                'convo':'basic_conversation'
                             })
 
 graph.add_edge('raw_db','generate_response')
 
 graph.add_edge('summ_db','generate_response')
+
+graph.add_edge('basic_conversation',END)
 
 graph.add_edge('generate_response',END)
 
@@ -214,7 +243,6 @@ if __name__=="__main__":
     display(app.get_graph().draw_ascii())
     
     
-    query=input('Enter your query')
 
     
     ingesting_video(Youtube({'video_id':'-8NURSdnTcg','documents':[],'question':'','answer':''}))
