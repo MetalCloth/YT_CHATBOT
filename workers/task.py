@@ -62,6 +62,20 @@ def ingesting_video(state:Youtube):
     db_store.ingesting_summarized_docs(summaries_mapped)
 
 
+def shortcut(state:Youtube):
+    """Basically shortcut baby if to ingest or to continue"""
+
+    db_store=Store(state['video_id'])
+
+    
+    verdict=db_store.collection_exists(state['video_id'])
+
+    if verdict:
+        return 'exist'
+    
+    else:
+        return 'not_exist'
+
 
 def condition(state:Youtube):
     assert state['question']
@@ -101,6 +115,7 @@ def vector_search_for_summ_db(state:Youtube):
     summ_retriever=Retriever(video_id=state['video_id']).summarized_retriever(k=3)
 
     response=summ_retriever.invoke(state['question'])
+
     state['documents'].append(response)
     return state
 
@@ -196,6 +211,8 @@ def generate_response(state:Youtube):
 
     prompt=summarizing_prompt()
 
+    print('response prompt',prompt)
+
     chain=prompt | model
 
     response=chain.invoke({'ques':state['question'],'context':state['documents']})
@@ -206,7 +223,6 @@ def generate_response(state:Youtube):
 
 graph=StateGraph(Youtube)
 
-fake_graph=StateGraph(Youtube)
 
 graph.add_node('ingestion',ingesting_video)
 graph.add_node('raw_db',vector_search_for_raw_db)
@@ -214,15 +230,38 @@ graph.add_node('summ_db',vector_search_for_summ_db)
 graph.add_node('generate_response',generate_response)
 graph.add_node('basic_conversation',basic_conversation)
 
-fake_graph.add_edge(START,'ingestion')
-fake_graph.add_edge('ingestion',END)
 
-graph.add_conditional_edges(START,condition,
-                            {
-                                'raw':'raw_db',
-                                'summary':'summ_db',
-                                'convo':'basic_conversation'
-                            })
+graph.add_node('shortcut', lambda x: {})
+graph.add_node('condition', lambda x: {})
+
+# graph.add_node("shortcut", shortcut)
+# graph.add_node("condition", condition)
+
+graph.set_entry_point("shortcut")
+
+# 3. Define the conditional logic using the routing functions
+# Now this works because 'shortcut' is a known node.
+graph.add_conditional_edges(
+    'shortcut',
+    shortcut,
+    {
+        'exist': 'condition',
+        'not_exist': 'ingestion'
+    }
+)
+
+
+graph.add_edge('ingestion','condition')
+
+graph.add_conditional_edges(
+    'condition',
+    condition,
+    {
+        'summary':'summ_db',
+        'raw':'raw_db',
+        'convo':'basic_conversation'
+    }
+)
 
 graph.add_edge('raw_db','generate_response')
 
@@ -245,7 +284,7 @@ if __name__=="__main__":
     
 
     
-    ingesting_video(Youtube({'video_id':'-8NURSdnTcg','documents':[],'question':'','answer':''}))
+    # ingesting_video(Youtube({'video_id':'-8NURSdnTcg','documents':[],'question':'','answer':''}))
 
     while True:
         query=input('Enter your query')

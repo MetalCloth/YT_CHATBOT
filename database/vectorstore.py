@@ -1,5 +1,6 @@
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_ollama import OllamaEmbeddings
+import chromadb
 from langchain_chroma import Chroma
 
 """ITS BASIC PURPOSE IS TO FUCKING SPLIT AND RETURN RETRIEVER THATS ALL OK?"""
@@ -10,8 +11,12 @@ class Store:
 
     def __init__(self,video_id):
         self.embeddings=OllamaEmbeddings(model='snowflake-arctic-embed:latest')
-        self.unsummarised_vectordb=Chroma(collection_name=video_id,embedding_function=self.embeddings,persist_directory='./unsummarised_docs')
-        self.summarised_vectordb=Chroma(collection_name=video_id,embedding_function=self.embeddings,persist_directory='./summarised_docs')
+        self.client1 = chromadb.PersistentClient(path='./unsummarised_docs')
+        self.client2 = chromadb.PersistentClient(path='./summarised_docs')
+        
+        
+        self.unsummarised_vectordb=Chroma(client=self.client1,collection_name=f"vid_{video_id}",embedding_function=self.embeddings)
+        self.summarised_vectordb=Chroma(client=self.client2,collection_name=f"vid_{video_id}",embedding_function=self.embeddings)
 
     def ingesting_raw_docs(self,raw_docs):
         """Ingesting raw_docs"""
@@ -42,6 +47,27 @@ class Store:
 
         print('Ingesting summarized_docs successful')
 
+    
+    def collection_exists(self,collection_name:str):
+        """Checks if the collection name exists on the vectordb"""
+        try:
+            collection=self.client1.get_collection(name=f"vid_{collection_name}")
+            item_count = collection.count()
+            
+            print(f"Collection '{collection_name}' found with {item_count} items.")
+            if item_count<=0:
+                return False
+            
+            print('client',self.client1)
+            print(f"Collection '{collection_name}' found.")
+            return True
+
+        except ValueError:
+            print(f"Collection '{collection_name}' not found.")
+            return False
+
+
+            
 
 class Retriever:
     """Makes a fucking retriever to do shits in this"""
