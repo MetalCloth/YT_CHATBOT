@@ -2,7 +2,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_ollama import ChatOllama
 from langchain_google_genai import ChatGoogleGenerativeAI
 import os
-from ai_core.prompts import conditional_prompt,summarizing_prompt,chat_prompt
+from ai_core.prompts import conditional_prompt,summarizing_prompt,chat_prompt,fucking_summarizer
 from dotenv import load_dotenv
 from langchain import tools
 from langgraph.graph import START,END,StateGraph
@@ -36,6 +36,7 @@ class Youtube(TypedDict):
     question:str
     documents:List[Document]
     answer:str
+    full_summmary:bool
 
 
 # class Docs(BaseModel):
@@ -60,6 +61,7 @@ def ingesting_video(state:Youtube):
     db_store = Store(state['video_id'])
     db_store.ingesting_raw_docs(raw_docs)
     db_store.ingesting_summarized_docs(summaries_mapped)
+    
 
 
 def shortcut(state:Youtube):
@@ -92,7 +94,6 @@ def condition(state:Youtube):
 
     response=chain.invoke({'text':state['question']})
 
-    print(response.content)
 
     if response.content.lower()=='summary_request':
         return 'summary'
@@ -111,13 +112,52 @@ def vector_search_for_summ_db(state:Youtube):
     """Uses vector search tool only for summarized DB From the metadata of the matching summary documents, 
     extract the list of original chunk IDs (raw_chunks_id).
     """
+    if state['full_summmary']:
+        print("STARTING FULL SUMMARY")
+        try:
+            # .get() pulls the raw data. We only need the documents and metadatas.
+            raw_result = Store(state['video_id']).summarised_vectordb.get(include=['metadatas', 'documents'])
 
-    summ_retriever=Retriever(video_id=state['video_id']).summarized_retriever(k=3)
+            # If the DB is empty, return an empty list
+            if not raw_result or not raw_result.get('ids'):
+                print("Warehouse is empty. No documents found.")
+                return []
+            
+            # This is the list where we'll store the loot
+            all_details = []
+            
+            # Now, we loop through the raw results and pull out what we want
+            for i in range(len(raw_result['ids'])):
+                metadata = raw_result['metadatas'][i]
+                content = raw_result['documents'][i]
 
-    response=summ_retriever.invoke(state['question'])
+                # The heist for one item's details
+                details = {
+                    'title': metadata.get('title', 'No Title Found'),
+                    'start_time': metadata.get('start_time', 'N/A'),
+                    'end_time': metadata.get('end_time', 'N/A'),
+                    'page_content': content
+                }
+                all_details.append(details)
+            
+            print(f"Heist successful. Retrieved details for {len(all_details)} documents.")
+            state['documents'].append(all_details)
+            print("ENDED FULL SUMMARY")
 
-    state['documents'].append(response)
-    return state
+            return state
+
+        except Exception as e:
+            print(f"Heist failed. An error occurred: {e}")
+            return []
+    
+    else:
+
+        summ_retriever=Retriever(video_id=state['video_id']).summarized_retriever(k=3)
+
+        response=summ_retriever.invoke(state['question'])
+
+        state['documents'].append(response)
+        return state
 
 
 # @tools
@@ -209,6 +249,20 @@ def generate_response(state:Youtube):
     # model=ChatOllama(model='llama3')
     model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
+    if state['full_summmary']:
+        print("DOING FULL SUMMARY BABYYY")
+        prompt=fucking_summarizer()
+
+        chain=prompt | model
+
+        response=chain.invoke({
+            'context':state['documents']
+        })
+
+        state['answer']=response.content
+
+        return state
+
     prompt=summarizing_prompt()
 
     print('response prompt',prompt)
@@ -234,8 +288,7 @@ graph.add_node('basic_conversation',basic_conversation)
 graph.add_node('shortcut', lambda x: {})
 graph.add_node('condition', lambda x: {})
 
-# graph.add_node("shortcut", shortcut)
-# graph.add_node("condition", condition)
+
 
 graph.set_entry_point("shortcut")
 
@@ -290,10 +343,11 @@ if __name__=="__main__":
         query=input('Enter your query')
 
         result=app.invoke({
-            'video_id':'-8NURSdnTcg',
+            'video_id':'Q5L0fycpQZI',
             'documents':[],
             'question':query,
-            'answer':""
+            'answer':"",
+            "full_summmary":True
         })
         print('-----ANSWER-----')
 

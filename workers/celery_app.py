@@ -1,30 +1,38 @@
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_ollama import OllamaEmbeddings
-from langchain_chroma import Chroma
-from transcribe import preprocessing,summarizing_each_doc
-
-"""ITS BASIC PURPOSE IS TO FUCKING SPLIT AND RETURN RETRIEVER THATS ALL OK?"""
+from workers.task import app
+from fastapi import FastAPI
 
 
-embeddings=OllamaEmbeddings(model='snowflake-arctic-embed:latest')
-unsummarised_vectordb=Chroma(collection_name="transcriptvectordb",embedding_function=embeddings,persist_directory='./unsummarised_docs')
-summarized_vectordb=Chroma(collection_name="transcriptvectordb",embedding_function=embeddings,persist_directory='./summarised_docs')
+x=FastAPI()
 
-splitter=RecursiveCharacterTextSplitter(chunk_size=1000,chunk_overlap=200)
+@x.get('/noob')
+def function():
+        result=app.invoke({
+            'video_id':'-8NURSdnTcg',
+            'documents':[],
+            'question':'who is messmer',
+            'answer':"",
+            'full_summmary':True
+        })
+        print('-----ANSWER-----')
 
+        print(result['answer'])
 
-def raw_chunk_vectordb(video_id):
-    raw_docs=preprocessing(video_id)
-
-    summarized_docs=summarizing_each_doc(raw_docs,chunks_size=4)
-
-    unsummarised_vectordb.aadd_documents(raw_docs)
-    summarized_vectordb.aadd_documents(summarized_docs)
-
-    print('Summarization is complete')
+        return {'response':result['answer']}
+        
 
 
 
 
 
+# while True:
+#         query=input('Enter your query')
 
+#         result=app.invoke({
+#             'video_id':'-8NURSdnTcg',
+#             'documents':[],
+#             'question':query,
+#             'answer':""
+#         })
+#         print('-----ANSWER-----')
+
+#         print(result['answer'])
