@@ -1,7 +1,7 @@
 import fastapi
 from requests import Request
 from fastapi import FastAPI
-from workers.task import app
+from workers.task import app,app2
 from pydantic import BaseModel
 import json
 
@@ -36,10 +36,11 @@ def health():
 def query(video_id:str,request:QueryPayload):
     try:
         
-
         question=request.question
-        
+
         full_summary=request.full_summary
+
+        
         
         if len(full_summary)==4:
             full_summary=True
@@ -51,13 +52,23 @@ def query(video_id:str,request:QueryPayload):
     
         display(app.get_graph().draw_ascii())
 
-        result=app.invoke({
-            'video_id':video_id,
-            'documents':[],
-            'question':question,
-            'answer':"",
-            "full_summmary":full_summary
-        })
+    
+        if full_summary:
+            result=app2.invoke({
+                'video_id':video_id,
+                'documents':[],
+                'question':'',
+                'answer':""
+            })
+        
+        else:
+            result=app.invoke({
+                'video_id':video_id,
+                'documents':[],
+                'question':question,
+                'answer':"",
+                # "full_summmary":full_summary
+            })
 
         return {'response':result}
 

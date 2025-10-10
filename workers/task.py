@@ -36,7 +36,7 @@ class Youtube(TypedDict):
     question:str
     documents:List[Document]
     answer:str
-    full_summmary:bool
+    # full_summmary:bool
 
 
 # class Docs(BaseModel):
@@ -46,10 +46,11 @@ class Youtube(TypedDict):
 
 
 def ingesting_video(state:Youtube):
+    
     """Does the basic ingesting """
 
     assert state['video_id']
-
+    print("doing basic ingestion")
     preprocess=PreProcessing(state['video_id'])
     preprocess.transcribing_video()
     summary_sections = preprocess.organising_summary_transcript()
@@ -61,11 +62,15 @@ def ingesting_video(state:Youtube):
     db_store = Store(state['video_id'])
     db_store.ingesting_raw_docs(raw_docs)
     db_store.ingesting_summarized_docs(summaries_mapped)
+
+    print('ingestion compleete')
     
 
 
 def shortcut(state:Youtube):
     """Basically shortcut baby if to ingest or to continue"""
+    
+    print('checking if ingestion needed')
 
     db_store=Store(state['video_id'])
 
@@ -81,6 +86,7 @@ def shortcut(state:Youtube):
 
 def condition(state:Youtube):
     assert state['question']
+    print('checking if summary or specific question')
 
     # model=ChatAnthropic(model='claude-sonnet-4-20250514')
     # model=ChatOllama(model='llama3')
@@ -112,52 +118,15 @@ def vector_search_for_summ_db(state:Youtube):
     """Uses vector search tool only for summarized DB From the metadata of the matching summary documents, 
     extract the list of original chunk IDs (raw_chunks_id).
     """
-    if state['full_summmary']:
-        print("STARTING FULL SUMMARY")
-        try:
-            # .get() pulls the raw data. We only need the documents and metadatas.
-            raw_result = Store(state['video_id']).summarised_vectordb.get(include=['metadatas', 'documents'])
-
-            # If the DB is empty, return an empty list
-            if not raw_result or not raw_result.get('ids'):
-                print("Warehouse is empty. No documents found.")
-                return []
-            
-            # This is the list where we'll store the loot
-            all_details = []
-            
-            # Now, we loop through the raw results and pull out what we want
-            for i in range(len(raw_result['ids'])):
-                metadata = raw_result['metadatas'][i]
-                content = raw_result['documents'][i]
-
-                # The heist for one item's details
-                details = {
-                    'title': metadata.get('title', 'No Title Found'),
-                    'start_time': metadata.get('start_time', 'N/A'),
-                    'end_time': metadata.get('end_time', 'N/A'),
-                    'page_content': content
-                }
-                all_details.append(details)
-            
-            print(f"Heist successful. Retrieved details for {len(all_details)} documents.")
-            state['documents'].append(all_details)
-            print("ENDED FULL SUMMARY")
-
-            return state
-
-        except Exception as e:
-            print(f"Heist failed. An error occurred: {e}")
-            return []
+    print('searching for answer in summary_db')
     
-    else:
 
-        summ_retriever=Retriever(video_id=state['video_id']).summarized_retriever(k=3)
+    summ_retriever=Retriever(video_id=state['video_id']).summarized_retriever(k=3)
 
-        response=summ_retriever.invoke(state['question'])
+    response=summ_retriever.invoke(state['question'])
 
-        state['documents'].append(response)
-        return state
+    state['documents'].append(response)
+    return state
 
 
 # @tools
@@ -169,6 +138,7 @@ def vector_search_for_raw_db(state:Youtube):
     """I will use summary retriever then i will use metaids from it to check the raw_retrirver 
     one and i will extract text from each metadata and boom"""
 
+    print('checking for asnwr in raw db')
 
     # raw_retriever=Retriever().summarized_retriever(k=3)
     # pi=[]
@@ -228,6 +198,79 @@ def vector_search_for_raw_db(state:Youtube):
     state['documents'].append(texts)
     return state
 
+def summarize_whole(state:Youtube):
+    # if state['full_summmary']:
+        print("STARTING FULL SUMMARY")
+        try:
+            # .get() pulls the raw data. We only need the documents and metadatas.
+            raw_result = Store(state['video_id']).summarised_vectordb.get(include=['metadatas', 'documents'])
+
+            # If the DB is empty, return an empty list
+            if not raw_result or not raw_result.get('ids'):
+                print("Warehouse is empty. No documents found.")
+                return []
+            
+            # This is the list where we'll store the loot
+            all_details = []
+            
+            # Now, we loop through the raw results and pull out what we want
+            for i in range(len(raw_result['ids'])):
+                metadata = raw_result['metadatas'][i]
+                content = raw_result['documents'][i]
+
+                # The heist for one item's details
+                details = {
+                    'title': metadata.get('title', 'No Title Found'),
+                    'start_time': metadata.get('start_time', 'N/A'),
+                    'end_time': metadata.get('end_time', 'N/A'),
+                    'page_content': content
+                }
+                all_details.append(details)
+            
+            print(f"Heist successful. Retrieved details for {len(all_details)} documents.")
+            state['documents'].append(all_details)
+            print("ENDED FULL SUMMARY")
+
+            return state
+
+        except Exception as e:
+            print(f"Heist failed. An occurred: {e}")
+            return []
+    
+
+def summary_generator(state:Youtube):
+    print("DOING FULL SUMMARY_GENERATOR")
+    model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+
+
+    # print("DOING FULL SUMMARY BABYYY")
+    prompt=fucking_summarizer()
+
+    chain=prompt | model
+
+    print("DOCUMENTS",state['documents'])
+    print("CHAIN",chain)
+    
+
+    response=chain.invoke({
+        'context':state['documents']
+    })
+
+    print(response.content)
+
+    
+    print("DONE SHIT BROOO")
+
+    state['answer']=response.content
+
+    print("DONE FULL SUMARY_GENERATOR")
+
+    return state
+    # except Exception as e:
+    #     print("MAHABALSESHWAR")
+        
+
+
 def basic_conversation(state:Youtube):
     # model=ChatAnthropic(model='claude-sonnet-4-20250514')
     # model=ChatOllama(model='llama3')
@@ -249,20 +292,7 @@ def generate_response(state:Youtube):
     # model=ChatOllama(model='llama3')
     model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
-    if state['full_summmary']:
-        print("DOING FULL SUMMARY BABYYY")
-        prompt=fucking_summarizer()
-
-        chain=prompt | model
-
-        response=chain.invoke({
-            'context':state['documents']
-        })
-
-        state['answer']=response.content
-
-        return state
-
+    
     prompt=summarizing_prompt()
 
     print('response prompt',prompt)
@@ -277,6 +307,14 @@ def generate_response(state:Youtube):
 
 graph=StateGraph(Youtube)
 
+graph2=StateGraph(Youtube)
+
+graph2.add_node('ingestion',ingesting_video)
+
+graph2.add_node('summary_db',summarize_whole)
+
+graph2.add_node('generate_summary',summary_generator)
+
 
 graph.add_node('ingestion',ingesting_video)
 graph.add_node('raw_db',vector_search_for_raw_db)
@@ -288,9 +326,30 @@ graph.add_node('basic_conversation',basic_conversation)
 graph.add_node('shortcut', lambda x: {})
 graph.add_node('condition', lambda x: {})
 
+graph2.add_node('shortcut', lambda x: {})
+graph2.set_entry_point("shortcut")
+
+graph2.add_conditional_edges(
+    'shortcut',
+    shortcut,
+    {
+        'exist': 'summary_db',
+        'not_exist': 'ingestion'
+    }
+)
+
+
 
 
 graph.set_entry_point("shortcut")
+
+
+# graph2.add_edge(START,'ingestion')
+graph2.add_edge('ingestion','summary_db')
+graph2.add_edge('summary_db','generate_summary')
+graph2.add_edge('generate_summary',END)
+
+
 
 # 3. Define the conditional logic using the routing functions
 # Now this works because 'shortcut' is a known node.
@@ -326,18 +385,13 @@ graph.add_edge('generate_response',END)
 
 app=graph.compile()
 
-
+app2=graph2.compile()
 
 if __name__=="__main__":
 
     from IPython.display import Image,display
     
     display(app.get_graph().draw_ascii())
-    
-    
-
-    
-    # ingesting_video(Youtube({'video_id':'-8NURSdnTcg','documents':[],'question':'','answer':''}))
 
     while True:
         query=input('Enter your query')
@@ -347,7 +401,7 @@ if __name__=="__main__":
             'documents':[],
             'question':query,
             'answer':"",
-            "full_summmary":True
+            # "full_summmary":True
         })
         print('-----ANSWER-----')
 

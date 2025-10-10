@@ -4,11 +4,13 @@ langchain-community
 langchain-groq
 langchainhub
 langchain-google-genai 
+asyncpg
 streamlit
 PyPDF2
 python-dotenv
 requests
 pypdf
+python-socketio
 langchain-anthropic
 duckduckgo-search
 midjourney-api
