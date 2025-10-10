@@ -281,7 +281,7 @@ def basic_conversation(state:Youtube):
 
     chain=prompt | model
     """Gonna give this shit convo history"""
-    response=chain.invoke({'msg':state['question']})
+    response=chain.invoke({'msg':state['question'],'context':state['documents']})
 
     state['answer']=response.content
 
@@ -388,6 +388,7 @@ app=graph.compile()
 app2=graph2.compile()
 
 if __name__=="__main__":
+    document=[]
 
     from IPython.display import Image,display
     
@@ -398,7 +399,7 @@ if __name__=="__main__":
 
         result=app.invoke({
             'video_id':'Q5L0fycpQZI',
-            'documents':[],
+            'documents':document,
             'question':query,
             'answer':"",
             # "full_summmary":True

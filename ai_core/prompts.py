@@ -51,6 +51,8 @@ def chat_prompt():
         '''You are just a chatbot u would do basic convo with the user just give output and dont make urself soundl ike u are giving question answer be like a human,
         USER MESSAGE:
         {msg}
+        CONTEXT IF NEEDED:
+            {context}
         '''
     )
 
