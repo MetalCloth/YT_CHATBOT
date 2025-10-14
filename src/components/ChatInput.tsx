@@ -2,14 +2,15 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Send } from 'lucide-react';
+import { Send, FileText } from 'lucide-react';
 
 interface ChatInputProps {
   onSubmit: (videoUrl: string, question: string) => void;
+  onFullSummary: (videoUrl: string) => void;
   isLoading: boolean;
 }
 
-const ChatInput = ({ onSubmit, isLoading }: ChatInputProps) => {
+const ChatInput = ({ onSubmit, onFullSummary, isLoading }: ChatInputProps) => {
   const [videoUrl, setVideoUrl] = useState('');
   const [question, setQuestion] = useState('');
 
@@ -22,15 +23,33 @@ const ChatInput = ({ onSubmit, isLoading }: ChatInputProps) => {
     }
   };
 
+  const handleFullSummary = () => {
+    if (videoUrl.trim() && !isLoading) {
+      onFullSummary(videoUrl.trim());
+      setVideoUrl('');
+      setQuestion('');
+    }
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <Input
-        placeholder="YouTube video URL..."
-        value={videoUrl}
-        onChange={(e) => setVideoUrl(e.target.value)}
-        disabled={isLoading}
-        className="bg-secondary border-border text-foreground placeholder:text-muted-foreground focus:ring-primary"
-      />
+      <div className="flex gap-2">
+        <Input
+          placeholder="YouTube video URL..."
+          value={videoUrl}
+          onChange={(e) => setVideoUrl(e.target.value)}
+          disabled={isLoading}
+          className="bg-secondary border-border text-foreground placeholder:text-muted-foreground focus:ring-primary flex-1"
+        />
+        <Button
+          type="button"
+          onClick={handleFullSummary}
+          disabled={isLoading || !videoUrl.trim()}
+          className="bg-secondary hover:bg-secondary/80 text-foreground border border-border shadow-[0_0_15px_rgba(0,217,255,0.2)] hover:shadow-[0_0_25px_rgba(0,217,255,0.4)] transition-all"
+        >
+          <FileText className="h-5 w-5" />
+        </Button>
+      </div>
       <div className="flex gap-2">
         <Textarea
           placeholder="Ask a question about the video..."

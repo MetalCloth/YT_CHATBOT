@@ -59,6 +59,46 @@ const Index = () => {
     }
   };
 
+  const handleFullSummary = async (videoUrl: string) => {
+    const userMessage = `Full summary request for: ${videoUrl}`;
+    setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
+    setIsLoading(true);
+
+    try {
+      const response = await fetch('http://127.0.0.1:8000/summary', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          video_url: videoUrl,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch summary');
+      }
+
+      const data = await response.json();
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: data.summary || data.answer || 'No summary received.' },
+      ]);
+    } catch (error) {
+      console.error('Error:', error);
+      toast.error('Failed to get summary. Make sure your API is running at 127.0.0.1:8000/summary');
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: 'Sorry, I couldn\'t fetch the summary. Check if the API is running.',
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
@@ -93,7 +133,7 @@ const Index = () => {
 
         {/* Input Area */}
         <div className="border-t border-border pt-4">
-          <ChatInput onSubmit={handleSubmit} isLoading={isLoading} />
+          <ChatInput onSubmit={handleSubmit} onFullSummary={handleFullSummary} isLoading={isLoading} />
         </div>
       </main>
     </div>
