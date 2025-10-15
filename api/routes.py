@@ -2,14 +2,20 @@ import fastapi
 from requests import Request
 from fastapi import FastAPI
 from workers.task import app,app2
+import uuid
+from typing import Optional
 from pydantic import BaseModel
+from database.redis_session import redis,receive_msg_from_redis,msg_to_redis,r,Value
+
 import json
+
+
 
 api=FastAPI()
 
 
 class QueryPayload(BaseModel):
-    question: str
+    question: Optional[str]
     full_summary: str = False
 
 @api.get('/')
@@ -41,40 +47,35 @@ def query(video_id:str,request:QueryPayload):
         full_summary=request.full_summary
 
         
-        
         if len(full_summary)==4:
             full_summary=True
 
         else:
             full_summary=False
 
-        from IPython.display import Image,display
-    
-        display(app.get_graph().draw_ascii())
+        uuid_term=str(uuid.uuid4())
 
-    
-        if full_summary:
-            result=app2.invoke({
-                'video_id':video_id,
-                'documents':[],
-                'question':'',
-                'answer':""
-            })
+        key=uuid_term
+
+        msg_to_redis(r,key,value=Value(
+            user_id=key,
+            message=[question,video_id],
+            full_summary=full_summary,
+            sender="API"
+        ))
+
         
-        else:
-            result=app.invoke({
-                'video_id':video_id,
-                'documents':[],
-                'question':question,
-                'answer':"",
-                # "full_summmary":full_summary
-            })
 
-        return {'response':result}
+        print("SENT TO THE REDIS BITCH")
+
+
 
     except Exception as e:
         print("ERROR A AGYA HOGA BHADWE",e)
 
+
+
+
     
 
 
@@ -82,3 +83,29 @@ def query(video_id:str,request:QueryPayload):
         
 
 
+    #     from IPython.display import Image,display
+    
+    #     display(app.get_graph().draw_ascii())
+
+    
+    #     if full_summary:
+    #         result=app2.invoke({
+    #             'video_id':video_id,
+    #             'documents':[],
+    #             'question':'',
+    #             'answer':""
+    #         })
+        
+    #     else:
+    #         result=app.invoke({
+    #             'video_id':video_id,
+    #             'documents':[],
+    #             'question':question,
+    #             'answer':"",
+    #             # "full_summmary":full_summary
+    #         })
+
+    #     return {'response':result}
+
+    # except Exception as e:
+    #     print("ERROR A AGYA HOGA BHADWE",e)

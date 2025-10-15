@@ -10,13 +10,16 @@ PyPDF2
 python-dotenv
 requests
 pypdf
+aioredis
 python-socketio
 langchain-anthropic
+websocket-client
 duckduckgo-search
 midjourney-api
 langchain-chroma
 faiss-cpu
 chromadb
+redis
 langchain-ollama
 langserve
 fastapi
