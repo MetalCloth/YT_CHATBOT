@@ -11,6 +11,7 @@ python-dotenv
 requests
 pypdf
 aioredis
+Celery
 python-socketio
 langchain-anthropic
 websocket-client

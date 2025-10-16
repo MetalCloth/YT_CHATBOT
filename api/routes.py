@@ -1,7 +1,11 @@
 import fastapi
 from requests import Request
-from fastapi import FastAPI
+from fastapi import FastAPI,Depends
 from workers.task import app,app2
+import asyncio
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+
+from database.session import create_job,update_job_status,create_table,get_job,engine,AsyncSessionLocal
 import uuid
 from typing import Optional
 from pydantic import BaseModel
@@ -23,6 +27,10 @@ def root():
     return {'w':'welcome bhosadiwale'}
 
 
+async def get_db():
+    async with AsyncSessionLocal() as db:
+        yield db
+
 
 """THERE IS FRONTEND WHO WILL GIMME THE FUCKING SHITS"""
 """LIKE /status/job_id in which job_id will ecrypted text containing my bois request"""
@@ -38,14 +46,17 @@ def health():
     {}
     """
 
+
+
 @api.post('/status/{video_id}')
-def query(video_id:str,request:QueryPayload):
+async def query(video_id:str,request:QueryPayload,db:AsyncSession=Depends(get_db)):
     try:
         
         question=request.question
 
-        full_summary=request.full_summary
+        
 
+        full_summary=request.full_summary
         
         if len(full_summary)==4:
             full_summary=True
@@ -57,18 +68,29 @@ def query(video_id:str,request:QueryPayload):
 
         key=uuid_term
 
+        create_table()
+
+        print("TABLE CREATED OR NOT IDK")
+
+        await create_job(db,job_id=key,video_id=video_id,question=question)
+
+        print("JOB CREATED")
+
+        
         msg_to_redis(r,key,value=Value(
             user_id=key,
-            message=[question,video_id],
+            # message=[question]
             full_summary=full_summary,
             sender="API"
         ))
-
         
 
         print("SENT TO THE REDIS BITCH")
 
-
+        return {
+            'response':'Ok so we are now gonna do someshit chef is ready and will cook :)',
+            'job_id':key
+        }
 
     except Exception as e:
         print("ERROR A AGYA HOGA BHADWE",e)

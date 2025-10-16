@@ -13,9 +13,11 @@ AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=F
 async def create_table():
     async with engine.begin() as conn:
         await conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS jobs (
+        CREATE TABLE IF NOT EXISTS data (
             id SERIAL PRIMARY KEY,
             job_id TEXT UNIQUE NOT NULL,
+            video_id TEXT NOT NULL,
+            question TEXT,
             status TEXT NOT NULL,
             response TEXT,
             created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (NOW() at time zone 'utc')
@@ -23,13 +25,20 @@ async def create_table():
 """))
     print("table created")
 
+async def drop(conn:AsyncSession):
+    await conn.execute(text(
+        """DROP TABLE IF EXISTS data;
+"""
+    ))
+    print("DELETED")
 
-async def create_job(conn:AsyncSession,job_id:str):
+
+async def create_job(conn:AsyncSession,job_id:str,video_id:str,question:str):
     await conn.execute(text("""
-    INSERT INTO jobs (job_id,status) VALUES (:x,:y);
+    INSERT INTO data (job_id,status,video_id,question) VALUES (:x,:y,:z,:a);
 """
         
-    ),{"x":job_id,"y":"PENDING"})
+    ),{"x":job_id,"y":"PENDING","z":video_id,"a":question})
 
     await conn.commit()
 
@@ -40,7 +49,7 @@ async def create_job(conn:AsyncSession,job_id:str):
 async def get_job(conn:AsyncSession,job_id:str):
 
     response=await conn.execute(text("""
-    SELECT * FROM jobs WHERE job_id=:job_id
+    SELECT * FROM data WHERE job_id=:job_id
 """ 
     ),{'job_id':job_id})
 
@@ -54,7 +63,7 @@ async def get_job(conn:AsyncSession,job_id:str):
 
 async def update_job_status(conn:AsyncSession,job_id:str,status: str, summary: str):
     await conn.execute(text("""
-    UPDATE jobs SET status=:status,response=:response WHERE job_id=:job_id
+    UPDATE data SET status=:status,response=:response WHERE job_id=:job_id
 """ 
     ),{'status':status,'response':summary,'job_id':job_id})
 
@@ -64,31 +73,39 @@ async def update_job_status(conn:AsyncSession,job_id:str,status: str, summary: s
 
 async def delete_job(conn:AsyncSession,job_id:str):
     await conn.execute(text("""
-    DELETE FROM jobs WHERE job_id=:job_id
+    DELETE FROM data WHERE job_id=:job_id
 """ 
     ),{'job_id':job_id})
 
     await conn.commit()
 
-    print('DELETED jobs')
+    print('DELETED data')
 
-async def main():
-    await create_table()
+# async def main():
+#     await create_table()
 
-    async with AsyncSessionLocal() as db:
-        print("\n--- Running SQLAlchemy Core demo ---")
-        job_id = "test-job-567"
+#     async with AsyncSessionLocal() as db:
+#         # await drop(db)
+#         # print("DELETED THAT SHIT")
+#         print("\n--- Running SQLAlchemy Core demo ---")
+#         job_id = "test-job-7789"
+#         video_id="ey2319"
+#         question="What is this all about"
+#         await create_job(db, job_id,video_id,question)
+#         job=await get_job(db, job_id)
 
-        await create_job(db, job_id)
-        await get_job(db, job_id)
-        await update_job_status(db, job_id, "SUCCESS", "This is the final summary.")
-        await delete_job(db, job_id)
+#         print(f"JOB IS {job} ")
+# # JOB IS {'id': 1, 'job_id': 'test-job-7789', 'video_id': 'ey2319', 'question': 'What is this all about', 'status': 'PENDING', 'response': None, 'created_at': datetime.datetime(2025, 10, 16, 17, 24, 23, 257939)}
+#         await update_job_status(db, job_id, "SUCCESS", "This is the final summary.")
+#         await delete_job(db, job_id)
 
-        print("\n--- Demo finished ---")
+#         print("\n--- Demo finished ---")
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# if __name__ == "__main__":
+#     asyncio.run(main())
 
     
+
+
 
