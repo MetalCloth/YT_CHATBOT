@@ -7,6 +7,7 @@ import uuid
 from typing import TypedDict,Optional
 import os
 from workers.celery_app import process_video_summary
+
 import json
 
 """First doing shit synchronously ok?"""

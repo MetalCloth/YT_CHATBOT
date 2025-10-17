@@ -3,6 +3,7 @@ import fastapi
 from requests import Request
 import asyncio
 from fastapi import FastAPI
+import json
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from database.session import create_job,update_job_status,create_table,get_job,engine,AsyncSessionLocal
 
@@ -31,8 +32,7 @@ async def get_postgres_job(job_id: str):
 
 
 
-@app.task
-def process_video_summary(job):
+async def asynchronous_process(job):
     """This is triggered whenever the redis thingy is changed or mutated or updated"""
 
     #     "user_id":key,
@@ -43,33 +43,47 @@ def process_video_summary(job):
     user_id=job['user_id']
     sender=job['sender']
     full_summary=job['full_summary']
-    job_info = asyncio.run(get_postgres_job(job_id=user_id))
+    job_info=""
+    async with AsyncSessionLocal() as db:
+        try:
+            job_info=await get_job(db, job_id=user_id)
+            print(f"CELERY WORKER: postgres job  '{user_id}' complete.")
+            result=""
+        # Process using your graph apps
+            if full_summary:
+                result = await asyncio.to_thread(app2.invoke,{
+                    'video_id': job_info['video_id'],
+                    'documents': [],
+                    'question': '',
+                    'answer': ""
+                })
+                
+            else:
+                result = await asyncio.to_thread(app.invoke,{
+                    'video_id': job_info['video_id'],
+                    'documents': [],
+                    'question': job_info['question'],
+                    'answer': "",
+                })
 
-    # Process using your graph apps
-    try:
-        if full_summary:
-            result = app2.invoke({
-                'video_id': job_info['video_id'],
-                'documents': [],
-                'question': '',
-                'answer': ""
-            })
-        else:
-            result = app.invoke({
-                'video_id': job_info['video_id'],
-                'documents': [],
-                'question': job_info['question'],
-                'answer': "",
-            })
+            summary_text = json.dumps(result)
+                
 
-        # Update Postgres
-        asyncio.run(update_postgres(job_id=job_info['video_id'], status='SUCCESS', summary=result))
-        print(f"Job {job_info['video_id']} processed successfully.")
-        return {"response": result}
+            # Update Postgres
+            print("JOB INFO IS OR SHOULD ",job_info)
+            await update_job_status(db, job_id=job_info['job_id'], status='SUCCESS', summary=summary_text)
+            print(f"CELERY WORKER: PostgreSQL update for job '{user_id}' complete.")
 
-    except Exception as e:
-        print(f"Error processing job {job_info['video_id']}: {e}")
-        return {"response": f"Error -> {e}"}            
+            print(f"Job {job_info['video_id']} processed successfully.")
+            return {"response": summary_text}
+
+        except Exception as e:
+            print(f"Error processing job {job_info['video_id']}: {e}")
+            return {"response": f"Error -> {e}"}            
+        
+@app.task
+def process_video_summary(job):
+    return asyncio.run(asynchronous_process(job))
 # @app.task
 # def process_video_summary(r,key):
 #     print("CELERY WORKING IS GONNA SHIT")
