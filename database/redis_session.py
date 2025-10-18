@@ -38,7 +38,7 @@ x=r.keys("*")
 print(r.keys("*"))
 
 # r.flushall()
-def msg_to_redis(r:redis.Redis,key,value:Value):
+def msg_to_redis(r:redis.Redis,key,value:Value,channel='to_redis'):
     """Sending message to redis
     {msg_to_redis(r,key,value=Value(
             user_id=key,
@@ -61,7 +61,7 @@ def msg_to_redis(r:redis.Redis,key,value:Value):
 
     r.rpush(key,json_msg)
 
-    r.publish('redis_changes',json_msg)
+    r.publish(channel,json_msg)
 
 
 
@@ -85,18 +85,41 @@ def receive_msg_from_redis(r:redis.Redis,key):
     return msg
 
 
+
 def redis_listener(r:redis.Redis):
     pubsub = r.pubsub()
-    pubsub.subscribe('redis_changes')
+    pubsub.subscribe('to_redis')
+    pubsub.subscribe('from_redis')
 
     print("SUBSCRIBED TO REDIS PUBSUB")
 
     for message in pubsub.listen():
 
         if message['type'] == 'message':
+            channel=message['channel']
             job_data = json.loads(message["data"])
+            #     "user_id":key,
+        # # "message":value.message,
+        # "sender":"Human",
+        # "full_summary":value.full_summary
+
             print("SENDING TO CELERY")
-            process_video_summary.delay(job_data)
+
+            print(f'New message on channel {channel}')
+
+            if channel=='to_redis':
+                process_video_summary.delay(job_data)
+
+            elif channel=='from_redis':
+                x=r.blpop(job_data['user_id'],timeout=0)
+
+                send_to_hell.delay(job_data)
+
+
+
+
+
+    
 
         
 if __name__ == '__main__':
