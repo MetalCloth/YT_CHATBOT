@@ -6,7 +6,6 @@ from pydantic import BaseModel
 import uuid
 from typing import TypedDict,Optional
 import os
-from workers.celery_app import process_video_summary
 
 import json
 
@@ -38,7 +37,7 @@ x=r.keys("*")
 print(r.keys("*"))
 
 # r.flushall()
-def msg_to_redis(r:redis.Redis,key,value:Value):
+def msg_to_redis(r:redis.Redis,key,value:Value,channel='to_redis'):
     """Sending message to redis
     {msg_to_redis(r,key,value=Value(
             user_id=key,
@@ -48,25 +47,26 @@ def msg_to_redis(r:redis.Redis,key,value:Value):
         ))}
     """
 
+    print("SENDING MESSAGE TO REDIS BY",value.sender)
+
     my_message={
         "user_id":key,
         # "message":value.message,
-        "sender":"Human",
+        "sender":value.sender,
         "full_summary":value.full_summary
     }
 
     json_msg=json.dumps(my_message)
 
-    print("JSON",json_msg)
+    print("MESSAGE SEND TO REDIS",json_msg)
 
     r.rpush(key,json_msg)
 
-    r.publish('redis_changes',json_msg)
+    r.publish(channel,json_msg)
 
 
 
-    print("SENT MESSAGE STRAIGHT TO REDIS")
-
+    print("SENT MESSAGE TO",channel)
     
 
 
@@ -74,6 +74,8 @@ def receive_msg_from_redis(r:redis.Redis,key):
     """Recieveing message from the redis within a specific timeline bruv"""
 
     raw_msg=r.blpop(key,timeout=0)
+
+    print("RECIEVING MESSAGE FROM REDIS BY BLPOP")
 
     if raw_msg:
         _, msg_bytes = raw_msg
@@ -85,18 +87,41 @@ def receive_msg_from_redis(r:redis.Redis,key):
     return msg
 
 
+
 def redis_listener(r:redis.Redis):
+    from workers.celery_app import process_video_summary,send_to_hell
+
     pubsub = r.pubsub()
-    pubsub.subscribe('redis_changes')
+    pubsub.subscribe('to_redis')
+    pubsub.subscribe('from_redis')
 
     print("SUBSCRIBED TO REDIS PUBSUB")
 
     for message in pubsub.listen():
 
         if message['type'] == 'message':
+            channel=message['channel']
             job_data = json.loads(message["data"])
+            #     "user_id":key,
+        # # "message":value.message,
+        # "sender":"Human",
+        # "full_summary":value.full_summary
+
             print("SENDING TO CELERY")
-            process_video_summary.delay(job_data)
+
+            print(f'New message on channel {channel}')
+
+            if channel=='to_redis':
+                print("SENDING USER QUERY TO REDIS")
+                process_video_summary.delay(job_data)
+
+            elif channel=='from_redis':
+                print("REDIS THEN CELERY THEN POSTGRES THEN CELERY THEN REDIS")
+                x=r.blpop(job_data['user_id'],timeout=0)
+
+                send_to_hell.delay(job_data)
+
+
 
         
 if __name__ == '__main__':

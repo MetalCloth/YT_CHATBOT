@@ -1,3 +1,5 @@
+""""ERROR MIGHT BE DUE TO UNABILITY TO UPDATE OR DELETE POSTGRESQL"""
+
 import fastapi
 from requests import Request
 from fastapi import FastAPI,Depends
@@ -81,7 +83,7 @@ async def query(video_id:str,request:QueryPayload,db:AsyncSession=Depends(get_db
             user_id=key,
             # message=[question]
             full_summary=full_summary,
-            sender="API"
+            sender="Human"
         ))
         
 
