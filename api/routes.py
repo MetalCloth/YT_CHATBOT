@@ -2,7 +2,8 @@
 
 import fastapi
 from requests import Request
-from fastapi import FastAPI,Depends
+
+from fastapi import FastAPI,Depends,WebSocket
 from workers.task import app,app2
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -98,7 +99,13 @@ async def query(video_id:str,request:QueryPayload,db:AsyncSession=Depends(get_db
         print("ERROR A AGYA HOGA BHADWE",e)
 
 
+@api.websocket('/ws')
+async def websocket_endpoint(websocket:WebSocket):
+    await websocket.accept()
 
+    print("SERVER ONLINE")
+    try:
+        
 
     
 
