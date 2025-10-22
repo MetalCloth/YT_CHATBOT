@@ -127,6 +127,8 @@ async def redis_celery_postgresql_api(job):
 
                 print("SENDING TO THE API BIG BOI")
 
+                return response
+
                 
 
                 """Send to the fucking API idk how but do it later obv"""

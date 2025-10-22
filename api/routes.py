@@ -5,6 +5,8 @@ from requests import Request
 
 from fastapi import FastAPI,Depends,WebSocket
 from workers.task import app,app2
+import redis.asyncio as aioredis
+
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 
@@ -99,12 +101,63 @@ async def query(video_id:str,request:QueryPayload,db:AsyncSession=Depends(get_db
         print("ERROR A AGYA HOGA BHADWE",e)
 
 
-@api.websocket('/ws')
-async def websocket_endpoint(websocket:WebSocket):
+@api.websocket('/ws/status/{job_id}')
+async def websocket_endpoint(websocket:WebSocket,job_id:str):
+    """"Gonna dismantel the redis_listener into splitted personality and not a fucking funcition"""
+    import os
     await websocket.accept()
+    os.environ['REDIS_API_KEY'] = os.getenv('REDIS_API_KEY')
+
+    # Connect to Redis
+#     r = aioredis.from_url(
+#     f"redis://default:{os.environ['REDIS_API_KEY']}@redis-12857.c62.us-east-1-4.ec2.redns.redis-cloud.com:12857/0",
+#     decode_responses=True
+# )
+
+    from workers.celery_app import process_video_summary,send_to_hell
 
     print("SERVER ONLINE")
+
+    pubsub=r.pubsub()
+
+    # await pubsub.subscribe('from_redis')
+    pubsub.subscribe('from_redis')
+
+    
+
+    print("SUBSCRIBED TO REDIS BY API  {job_id}NOW LISTENING")
+
     try:
+
+        for message in pubsub.listen():
+            if message['type']=='message':
+                channel=message['channel']
+                print("CHANNEL NAME IS",channel)
+                job_data = json.loads(message["data"])
+
+                print("SENDING TO CELERY")
+                
+                print(f'New message on channel "from redis"')
+                # x=r.blpop(job_data['user_id'],timeout=0)
+
+                print("USING HELL FROM ROUTES")
+
+                response=send_to_hell.delay(job_data)
+                print("SENT HELL FROM ROUTES")
+
+
+                await websocket.send_text(response)
+
+    except Exception as e:
+        print("ERROR OCCURED IN WEBSOCKET",e)
+
+    finally:
+        await websocket.close()
+                
+
+
+
+
         
 
     
