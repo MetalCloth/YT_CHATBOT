@@ -102,7 +102,7 @@ async def query(video_id:str,request:QueryPayload,db:AsyncSession=Depends(get_db
 
 
 @api.websocket('/ws/status/{job_id}')
-async def websocket_endpoint(websocket:WebSocket,job_id:str):
+async def websocket_endpoint(websocket:WebSocket):
     """"Gonna dismantel the redis_listener into splitted personality and not a fucking funcition"""
     import os
     await websocket.accept()
@@ -114,14 +114,16 @@ async def websocket_endpoint(websocket:WebSocket,job_id:str):
 #     decode_responses=True
 # )
 
-    from workers.celery_app import process_video_summary,send_to_hell
+    from workers.celery_app import process_video_summary
 
     print("SERVER ONLINE")
 
-    pubsub=r.pubsub()
+    redis_url = f"redis://default:{os.getenv('REDIS_API_KEY')}@redis-12857.c62.us-east-1-4.ec2.redns.redis-cloud.com:12857/0"
+    r = aioredis.from_url(redis_url, decode_responses=True)
 
     # await pubsub.subscribe('from_redis')
-    pubsub.subscribe('from_redis')
+    pubsub = r.pubsub()
+    await pubsub.subscribe('from_redis')
 
     
 
@@ -129,7 +131,7 @@ async def websocket_endpoint(websocket:WebSocket,job_id:str):
 
     try:
 
-        for message in pubsub.listen():
+        async for message in pubsub.listen():
             if message['type']=='message':
                 channel=message['channel']
                 print("CHANNEL NAME IS",channel)
@@ -137,26 +139,41 @@ async def websocket_endpoint(websocket:WebSocket,job_id:str):
 
                 print("SENDING TO CELERY")
                 
+                
                 print(f'New message on channel "from redis"')
-                # x=r.blpop(job_data['user_id'],timeout=0)
 
-                print("USING HELL FROM ROUTES")
-
-                response=send_to_hell.delay(job_data)
-                print("SENT HELL FROM ROUTES")
-
-
-                await websocket.send_text(response)
+                summary=""
+                async with AsyncSessionLocal() as db:
+                        job_info = await get_job(db, job_id=job_data['user_id'])
+                        if job_info:
+                            summary = job_info['response'] # Assuming 'response' holds the summary
+                    
+                    # Send the final summary to the client
+                print("GOT THE SUMMMARY BABYYYYYY",summary)
+                await websocket.send_text(summary)
+                break
 
     except Exception as e:
         print("ERROR OCCURED IN WEBSOCKET",e)
 
     finally:
+        print(f"Client {job_id} disconnecting.")
+        await pubsub.unsubscribe('from_redis')
+        await r.close()
         await websocket.close()
                 
 
 
 
+                # x=r.blpop(job_data['user_id'],timeout=0)
+
+                # print("USING HELL FROM ROUTES")
+
+                # response=await send_to_hell.delay(job_data)
+                # print("SENT HELL FROM ROUTES")
+
+
+                # await websocket.send_text(response)
 
         
 

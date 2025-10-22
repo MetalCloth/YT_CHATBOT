@@ -89,7 +89,7 @@ def receive_msg_from_redis(r:redis.Redis,key):
 
 
 def redis_listener(r:redis.Redis):
-    from workers.celery_app import process_video_summary,send_to_hell
+    from workers.celery_app import process_video_summary
 
     pubsub = r.pubsub()
     pubsub.subscribe('to_redis')
@@ -115,12 +115,7 @@ def redis_listener(r:redis.Redis):
                 print("SENDING USER QUERY TO REDIS")
                 process_video_summary.delay(job_data)
 
-            elif channel=='from_redis':
-                print("REDIS THEN CELERY THEN POSTGRES THEN CELERY THEN REDIS")
-                x=r.blpop(job_data['user_id'],timeout=0)
-
-                send_to_hell.delay(job_data)
-
+            
 
 
         

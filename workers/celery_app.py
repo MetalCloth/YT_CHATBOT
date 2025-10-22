@@ -105,43 +105,43 @@ async def asynchronous_process(job):
             await engine.dispose()       
         
 
-"""This function will recieve update from redis and will blpop and fetch postgresql and kindly send to api ig"""
-async def redis_celery_postgresql_api(job):
-    engine = create_async_engine(DATABASE_URL)
-    TaskSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+# """This function will recieve update from redis and will blpop and fetch postgresql and kindly send to api ig"""
+# async def redis_celery_postgresql_api(job):
+#     engine = create_async_engine(DATABASE_URL)
+#     TaskSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     
-    user_id=job['user_id']
-    sender=job['sender']
-    full_summary=job['full_summary']
-    job_info=""
-    async with TaskSessionLocal() as db:
-        print("SENDER IS",sender)
-        if sender=="AI":
-            try:
-                job_info=await get_job(db,job_id=user_id)
-                print(f"JOB INFO IS {job_info}")
+#     user_id=job['user_id']
+#     sender=job['sender']
+#     full_summary=job['full_summary']
+#     job_info=""
+#     async with TaskSessionLocal() as db:
+#         print("SENDER IS",sender)
+#         if sender=="AI":
+#             try:
+#                 job_info=await get_job(db,job_id=user_id)
+#                 print(f"JOB INFO IS {job_info}")
 
-                response=job_info['response']
+#                 response=job_info['response']
 
-                print("RESPONSE IS THIS ",response)
+#                 print("RESPONSE IS THIS ",response)
 
-                print("SENDING TO THE API BIG BOI")
+#                 print("SENDING TO THE API BIG BOI")
 
-                return response
+#                 return response
 
                 
 
-                """Send to the fucking API idk how but do it later obv"""
+#                 """Send to the fucking API idk how but do it later obv"""
 
 
-            except Exception as e:
-                print("ERROR FACED",e)
-            finally:
-                await engine.dispose()
+#             except Exception as e:
+#                 print("ERROR FACED",e)
+#             finally:
+#                 await engine.dispose()
 
-@app.task
-def send_to_hell(job):
-    return asyncio.run(redis_celery_postgresql_api(job))
+# @app.task
+# def send_to_hell(job):
+#     return asyncio.run(redis_celery_postgresql_api(job))
 
 
 
