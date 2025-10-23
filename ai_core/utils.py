@@ -198,6 +198,7 @@ class PreProcessing:
             doc.metadata['title']=i.title
             doc.metadata['start_time']=self.hhmmss_to_seconds(i.start_time)
             doc.metadata['end_time']=self.hhmmss_to_seconds(i.end_time)
+            doc.metadata['video_id']=self.video_id
 
             docs.append(doc)
 
@@ -232,21 +233,6 @@ class PreProcessing:
 
     
 if __name__=="__main__":
-    # preprocess = PreProcessing(video_id='-8NURSdnTcg')
-    # preprocess.transcribing_video()
-
-    # # Chunk raw transcript
-    # raw_docs = preprocess.recursive_chunk_snippets(chunk_size=500, chunk_overlap=100)
-
-    # # Generate summaries with timestamps
-
-    # summaries = preprocess.organising_summary_transcript()
-
-    # # Map summaries to overlapping raw chunks
-    # summaries_mapped = preprocess.map_summaries_to_raw_by_time(summaries, raw_docs)
-    # # Check mapping
-    # for summ in summaries_mapped[:2]:
-    #     print(summ.metadata)
 
     preprocess = PreProcessing(video_id='IubDIhCxDTc')
     preprocess.transcribing_video()
