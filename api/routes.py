@@ -5,6 +5,7 @@ from requests import Request
 
 from fastapi import FastAPI,Depends,WebSocket
 from workers.task import app,app2
+import time
 import redis.asyncio as aioredis
 
 import asyncio
@@ -81,6 +82,13 @@ async def query(video_id:str,request:QueryPayload,db:AsyncSession=Depends(get_db
 
         print("JOB CREATED")
 
+        print("KEY IS ",key)
+
+        print("SLEEPING FOR 28 SECONDS")
+
+        await asyncio.sleep(12)
+
+        print("I AM aWAkE DUMBASS")
         
         msg_to_redis(r,key,value=Value(
             user_id=key,
@@ -102,7 +110,7 @@ async def query(video_id:str,request:QueryPayload,db:AsyncSession=Depends(get_db
 
 
 @api.websocket('/ws/status/{job_id}')
-async def websocket_endpoint(websocket:WebSocket):
+async def websocket_endpoint(websocket:WebSocket,job_id:str):
     """"Gonna dismantel the redis_listener into splitted personality and not a fucking funcition"""
     import os
     await websocket.accept()
@@ -130,12 +138,15 @@ async def websocket_endpoint(websocket:WebSocket):
     print("SUBSCRIBED TO REDIS BY API  {job_id}NOW LISTENING")
 
     try:
-
         async for message in pubsub.listen():
             if message['type']=='message':
                 channel=message['channel']
                 print("CHANNEL NAME IS",channel)
                 job_data = json.loads(message["data"])
+                
+
+                if job_data['user_id']!=job_id:
+                    continue
 
                 print("SENDING TO CELERY")
                 
@@ -144,7 +155,7 @@ async def websocket_endpoint(websocket:WebSocket):
 
                 summary=""
                 async with AsyncSessionLocal() as db:
-                        job_info = await get_job(db, job_id=job_data['user_id'])
+                        job_info = await get_job(db, job_id=job_id)
                         if job_info:
                             summary = job_info['response'] # Assuming 'response' holds the summary
                     
@@ -157,7 +168,7 @@ async def websocket_endpoint(websocket:WebSocket):
         print("ERROR OCCURED IN WEBSOCKET",e)
 
     finally:
-        print(f"Client {job_id} disconnecting.")
+        print(f"Client  disconnecting.")
         await pubsub.unsubscribe('from_redis')
         await r.close()
         await websocket.close()
