@@ -143,10 +143,12 @@ async def websocket_endpoint(websocket:WebSocket,job_id:str):
                 channel=message['channel']
                 print("CHANNEL NAME IS",channel)
                 job_data = json.loads(message["data"])
+
                 
 
                 if job_data['user_id']!=job_id:
                     continue
+
 
                 print("SENDING TO CELERY")
                 
@@ -160,6 +162,8 @@ async def websocket_endpoint(websocket:WebSocket,job_id:str):
                             summary = job_info['response'] # Assuming 'response' holds the summary
                     
                     # Send the final summary to the client
+                await r.blpop(job_data['user_id'],timeout=0)
+
                 print("GOT THE SUMMMARY BABYYYYYY",summary)
                 await websocket.send_text(summary)
                 break

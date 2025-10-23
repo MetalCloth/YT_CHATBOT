@@ -1,7 +1,7 @@
 import websocket
 import time
 
-WS_URL = "ws://127.0.0.1:8000/ws/status/44d361c8-c81a-4057-b510-0a904fcdc716"
+WS_URL = "ws://127.0.0.1:8000/ws/status/38873155-51be-460c-8f4b-2e0f119d22b6"
 
 print(f"CLIENT: Connecting to {WS_URL}...")
 
