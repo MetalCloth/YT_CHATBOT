@@ -5,6 +5,7 @@ from langchain_groq import ChatGroq
 from ai_core.prompts import dividing_prompt
 import os
 import json
+import yt_dlp
 from dotenv import load_dotenv
 from typing import List
 from langchain_anthropic import ChatAnthropic
@@ -20,16 +21,21 @@ import uuid
 from langchain_chroma import Chroma
 from langchain.output_parsers import PydanticOutputParser
 
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.proxies import WebshareProxyConfig
+
 """PREPROCESSING AND CONVERTING TO RAW AND SUMM DOCS"""
 
 """ADDING TIMESTAMP LATER ON"""
 
 
 class Section(BaseModel):
+    # collection_id:str
     title: str = Field(..., description="Chapter title")
     summary: str
     start_time: str
     end_time: str
+    # video_id:str
 
 # FIX 1: Create a wrapper model to hold the list of sections
 class Sections(BaseModel):
@@ -53,22 +59,31 @@ chain=prompt | model
 class PreProcessing:
     """Uses basic principle of ingestion and preparing transcript"""
 
-    def __init__(self,video_id):
+    def __init__(self,video_id:str=None,collection_id:str=None):
         """Initializes Transcription for the video using video_id"""
-        self.video_id=video_id
+        self.collection_id=None
+        # self.video_id=None
+        if collection_id:
+            self.collection_id=collection_id
+        else:
+        
+            self.collection_id=video_id
+        
         self.transcript=""
     
 
-    def transcribing_video(self):
+    def transcribing_video(self,video_id:str):
         """Transcibes video like converting given yt video into text"""
-        transcript=YouTubeTranscriptApi()
+        transcript = YouTubeTranscriptApi()
         script=""
         try:
-            script=transcript.fetch(video_id=self.video_id)
+
+
+            script=transcript.fetch(video_id=video_id)
 
 
         except Exception as e:
-            print(f'Transcript failure for the video_id {self.video_id} Reason may be video_id is wrong The real error is {e}')
+            print(f'Transcript failure for the video_id {video_id} Reason may be video_id is wrong The real error is {e}')
 
         self.transcript=script
 
@@ -173,7 +188,7 @@ class PreProcessing:
         # Calculate the total seconds using the formula: (h * 3600) + (m * 60) + s
         return (h * 3600) + (m * 60) + s
     
-    def organising_summary_transcript(self):
+    def organising_summary_transcript(self,video_id:str=None):
         """Converting into splitted text using Recursive Text Splitter"""
         
         # FIX 1: Use a valid and powerful Groq model
@@ -195,10 +210,12 @@ class PreProcessing:
             doc=Document(
                 page_content=i.summary
             )
+            doc.metadata['collection_id']=self.collection_id
             doc.metadata['title']=i.title
             doc.metadata['start_time']=self.hhmmss_to_seconds(i.start_time)
             doc.metadata['end_time']=self.hhmmss_to_seconds(i.end_time)
-            doc.metadata['video_id']=self.video_id
+            doc.metadata['video_id']=video_id
+            
 
             docs.append(doc)
 
@@ -228,23 +245,89 @@ class PreProcessing:
 
         return summaries
 
+    @staticmethod
+    def get_playlist_video_ids(playlist_url):
+        """Uses yt-dlp to extract all video IDs from a playlist."""
+        ydl_opts = {
+        'extract_flat': True,  # Don't download, just get the info
+        'quiet': True,         # Suppress yt-dlp's console output
+    }
+    
+        video_ids = []
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            try:
+                # Extract playlist info
+                playlist_info = ydl.extract_info(playlist_url, download=False)
+                
+                if 'entries' in playlist_info:
+                    for video in playlist_info['entries']:
+                        if video and 'id' in video:
+                            video_ids.append(video['id'])
+                print(f"Found {len(video_ids)} videos in the playlist.")
+                
+            except Exception as e:
+                print(f"Error extracting playlist info: {e}")
+                return None
+                
+        return video_ids
     
 
 
     
 if __name__=="__main__":
-
-    preprocess = PreProcessing(video_id='IubDIhCxDTc')
-    preprocess.transcribing_video()
-    summary_sections = preprocess.organising_summary_transcript()
-    raw_docs = preprocess.recursive_chunk_snippets(chunk_size=500, chunk_overlap=100)
-    print(f"Created {len(raw_docs)} raw document chunks.")
-    summaries_mapped = preprocess.map_summaries_to_raw_by_time(summary_sections, raw_docs)
+    PLAYLIST_URL='https://www.youtube.com/playlist?list=PLRAV69dS1uWT4v4iK1h6qejyhGObFH9_o'
+    VIDEO_ID='IubDIhCxDTc'
+    preprocess = PreProcessing(collection_id=PLAYLIST_URL)
+    ## collection id = video_id
+    x=[]
+    if PLAYLIST_URL:
+        print("APPROACHING PLAYLIST STYLE")
+        x=preprocess.get_playlist_video_ids(PLAYLIST_URL)
     
-    print(summaries_mapped)
+    else:
+        x=[VIDEO_ID]
+
+    j=0
+
+    for video_id in x:
+        preprocess.transcribing_video(video_id=video_id)
+        summary_sections = preprocess.organising_summary_transcript(video_id=video_id)
+        raw_docs = preprocess.recursive_chunk_snippets(chunk_size=500, chunk_overlap=100)
+        print(f"Created {len(raw_docs)} raw document chunks.")
+        summaries_mapped = preprocess.map_summaries_to_raw_by_time(summary_sections, raw_docs)
+        
+        print(summaries_mapped)
+        j=j+1
+        if j==2:
+            break
 
 
 
 
 
 
+
+
+
+
+#     from youtube_transcript_api import YouTubeTranscriptApi
+#     from youtube_transcript_api.proxies import WebshareProxyConfig
+
+#     ytt_api = YouTubeTranscriptApi(
+#         proxy_config=WebshareProxyConfig(
+#             proxy_username="<proxy-username>",
+#             proxy_password="<proxy-password>",
+#         )
+#     )
+
+# # all requests done by ytt_api will now be proxied through Webshare
+# ytt_api.fetch(video_id)
+
+    # ytt_api  = YouTubeTranscriptApi(
+    # proxy_config=WebshareProxyConfig(
+    #     proxy_username="keibyjxw",
+    #     proxy_password="4s2dl9qpn8ay",
+    # )
+    # )
+
+    # ytt_api.fetch('IubDIhCxDTc')
