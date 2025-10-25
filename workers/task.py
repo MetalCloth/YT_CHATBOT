@@ -36,6 +36,8 @@ class Youtube(TypedDict):
     question:str
     documents:List[Document]
     answer:str
+    playlist_id:Optional[str]
+
     # full_summmary:bool
 
 
@@ -51,7 +53,7 @@ def ingesting_video(state:Youtube):
 
     assert state['video_id']
     print("doing basic ingestion")
-    preprocess=PreProcessing(state['video_id'])
+    preprocess=PreProcessing(state['video_id'],playlist_id=state.get('playlist_id'))
     preprocess.transcribing_video()
     summary_sections = preprocess.organising_summary_transcript()
     raw_docs = preprocess.recursive_chunk_snippets(chunk_size=500, chunk_overlap=100)
@@ -59,7 +61,8 @@ def ingesting_video(state:Youtube):
     summaries_mapped = preprocess.map_summaries_to_raw_by_time(summary_sections, raw_docs)
     
 
-    db_store = Store(state['video_id'])
+    db_store = Store()
+    
     db_store.ingesting_raw_docs(raw_docs)
     db_store.ingesting_summarized_docs(summaries_mapped)
 
@@ -72,7 +75,7 @@ def shortcut(state:Youtube):
     
     print('checking if ingestion needed')
 
-    db_store=Store(state['video_id'])
+    db_store=Store()
 
     
     verdict=db_store.collection_exists(state['video_id'])
@@ -121,7 +124,29 @@ def vector_search_for_summ_db(state:Youtube):
     print('searching for answer in summary_db')
     
 
-    summ_retriever=Retriever(video_id=state['video_id']).summarized_retriever(k=3)
+    summ_retriever=Retriever().summarized_retriever(k=5)
+    search_filter = {}
+
+    playlist_id = state.get('playlist_id')
+    video_id = state.get('video_id')
+
+    # 3. Build the filter logic
+    if playlist_id and video_id:
+        print(f"Filtering for playlist {playlist_id} AND video {video_id}")
+        search_filter = {
+            "$and": [
+                {"playlist_id": playlist_id},
+                {"video_id": video_id}
+            ]
+        }
+    elif playlist_id:
+        print(f"Filtering for entire playlist {playlist_id}")
+        search_filter = {"playlist_id": playlist_id}
+    else:
+        print(f"Filtering for single video {video_id}")
+        search_filter = {"video_id": video_id}
+
+    summ_retriever.search_kwargs = {"k": 3, "filter": search_filter}
 
     response=summ_retriever.invoke(state['question'])
 
@@ -155,8 +180,34 @@ def vector_search_for_raw_db(state:Youtube):
     print("HELLO WORLD")
 
 
-    raw_retriever = Retriever(video_id=state['video_id']).summarized_retriever(k=3)
+    raw_retriever = Retriever().summarized_retriever(k=5)
+    search_filter={}
+
+    playlist_id=state.get('playlist_id')
+    video_id=state.get('video_id')
+
+    if playlist_id and video_id:
+        print(f"Filtering for playlist {playlist_id} AND video {video_id}")
+        search_filter = {
+            "$and": [
+                {"playlist_id": playlist_id},
+                {"video_id": video_id}
+            ]
+        }
+
+    elif playlist_id:
+        # User gave only playlist: "Search the whole playlist"
+        print(f"Filtering for entire playlist {playlist_id}")
+        search_filter = {"playlist_id": playlist_id}
+    else:
+        # Fallback for /video/{video_id} endpoint (no playlist_id)
+        print(f"Filtering for single video {video_id}")
+        search_filter = {"video_id": video_id}    
+
     all_raw_ids = []
+    raw_retriever.search_kwargs = {"k": 5, "filter": search_filter}
+
+
     raw_retriever=raw_retriever.invoke(state['question'])
 
 
@@ -203,7 +254,7 @@ def summarize_whole(state:Youtube):
         print("STARTING FULL SUMMARY")
         try:
             # .get() pulls the raw data. We only need the documents and metadatas.
-            raw_result = Store(state['video_id']).summarised_vectordb.get(include=['metadatas', 'documents'])
+            raw_result = Store().summarised_vectordb.get(include=['metadatas', 'documents'])
 
             # If the DB is empty, return an empty list
             if not raw_result or not raw_result.get('ids'):

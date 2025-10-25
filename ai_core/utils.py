@@ -7,12 +7,14 @@ import os
 import json
 import yt_dlp
 from dotenv import load_dotenv
-from typing import List
+from typing import List,Optional
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel,Field
 load_dotenv()
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 os.environ['ANTHROPIC_API_KEY']=os.getenv('ANTHROPIC_API_KEY')
+os.environ['GOOGLE_API_KEY']=os.getenv('GOOGLE_API_KEY')
 os.environ['GROQ_API_KEY']=os.getenv('GROQ_API_KEY')
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
@@ -30,7 +32,7 @@ from youtube_transcript_api.proxies import WebshareProxyConfig
 
 
 class Section(BaseModel):
-    # collection_id:str
+    # playlist_id:str
     title: str = Field(..., description="Chapter title")
     summary: str
     start_time: str
@@ -59,27 +61,21 @@ chain=prompt | model
 class PreProcessing:
     """Uses basic principle of ingestion and preparing transcript"""
 
-    def __init__(self,video_id:str=None,collection_id:str=None):
+    def __init__(self,video_id:str=None,playlist_id:Optional[str]=None):
         """Initializes Transcription for the video using video_id"""
-        self.collection_id=None
-        # self.video_id=None
-        if collection_id:
-            self.collection_id=collection_id
-        else:
-        
-            self.collection_id=video_id
-        
+        self.video_id=video_id
+        self.playlist_id=playlist_id
         self.transcript=""
     
 
-    def transcribing_video(self,video_id:str):
+    def transcribing_video(self):
         """Transcibes video like converting given yt video into text"""
         transcript = YouTubeTranscriptApi()
         script=""
         try:
 
 
-            script=transcript.fetch(video_id=video_id)
+            script=transcript.fetch(video_id=self.video_id)
 
 
         except Exception as e:
@@ -113,6 +109,8 @@ class PreProcessing:
                 docs.append(Document(
                     page_content=temp_text.strip(),
                     metadata={
+                        'video_id':self.video_id,
+                        'playlist_id':self.playlist_id,
                         'id': str(uuid.uuid4()),
                         'start_time': temp_start,
                         'end_time': temp_end
@@ -142,6 +140,8 @@ class PreProcessing:
             docs.append(Document(
                 page_content=temp_text.strip(),
                 metadata={
+                    'video_id':self.video_id,
+                    'playlist_id':self.playlist_id,
                     'id': str(uuid.uuid4()),
                     'start_time': temp_start,
                     'end_time': temp_end
@@ -188,7 +188,7 @@ class PreProcessing:
         # Calculate the total seconds using the formula: (h * 3600) + (m * 60) + s
         return (h * 3600) + (m * 60) + s
     
-    def organising_summary_transcript(self,video_id:str=None):
+    def organising_summary_transcript(self):
         """Converting into splitted text using Recursive Text Splitter"""
         
         # FIX 1: Use a valid and powerful Groq model
@@ -210,11 +210,11 @@ class PreProcessing:
             doc=Document(
                 page_content=i.summary
             )
-            doc.metadata['collection_id']=self.collection_id
+            doc.metadata['playlist_id']=self.playlist_id
             doc.metadata['title']=i.title
             doc.metadata['start_time']=self.hhmmss_to_seconds(i.start_time)
             doc.metadata['end_time']=self.hhmmss_to_seconds(i.end_time)
-            doc.metadata['video_id']=video_id
+            doc.metadata['video_id']=self.video_id
             
 
             docs.append(doc)
@@ -272,62 +272,69 @@ class PreProcessing:
         return video_ids
     
 
-
-    
+## vibecoded from here
 if __name__=="__main__":
-    PLAYLIST_URL='https://www.youtube.com/playlist?list=PLRAV69dS1uWT4v4iK1h6qejyhGObFH9_o'
-    VIDEO_ID='IubDIhCxDTc'
-    preprocess = PreProcessing(collection_id=PLAYLIST_URL)
-    ## collection id = video_id
-    x=[]
-    if PLAYLIST_URL:
-        print("APPROACHING PLAYLIST STYLE")
-        x=preprocess.get_playlist_video_ids(PLAYLIST_URL)
     
-    else:
-        x=[VIDEO_ID]
+    # 1. DEFINE YOUR TEST IDs
+    TEST_VIDEO_ID = 'IubDIhCxDTc' # A short video
+    TEST_PLAYLIST_ID = None
+    
+    print(f"--- Testing PreProcessing with video_id: {TEST_VIDEO_ID} and playlist_id: {TEST_PLAYLIST_ID} ---")
 
-    j=0
+    # 2. INITIALIZE THE CLASS with both IDs
+    preprocess = PreProcessing(video_id=TEST_VIDEO_ID, playlist_id=TEST_PLAYLIST_ID)
+    
+    print("\n[1/3] Transcribing video...")
+    preprocess.transcribing_video()
+    if not preprocess.transcript:
+        print("🔴 FAILED: Could not fetch transcript. Exiting.")
+        exit()
+    print("✅ Transcription complete.")
 
-    for video_id in x:
-        preprocess.transcribing_video(video_id=video_id)
-        summary_sections = preprocess.organising_summary_transcript(video_id=video_id)
-        raw_docs = preprocess.recursive_chunk_snippets(chunk_size=500, chunk_overlap=100)
-        print(f"Created {len(raw_docs)} raw document chunks.")
-        summaries_mapped = preprocess.map_summaries_to_raw_by_time(summary_sections, raw_docs)
+    # 3. TEST RAW CHUNKS
+    print("\n[2/3] Generating raw document chunks...")
+    raw_docs = preprocess.recursive_chunk_snippets()
+    print(f"✅ Generated {len(raw_docs)} raw chunks.")
+    
+    if raw_docs:
+        print("\n--- Checking metadata for raw_docs[0] ---")
+        first_raw_meta = raw_docs[0].metadata
+        print(first_raw_meta)
         
-        print(summaries_mapped)
-        j=j+1
-        if j==2:
-            break
+        # Check the tags
+        if first_raw_meta.get('video_id') == TEST_VIDEO_ID:
+            print("✅ video_id tag is correct.")
+        else:
+            print(f"❌ FAILED: video_id tag is missing or incorrect!")
+            
+        if first_raw_meta.get('playlist_id') == TEST_PLAYLIST_ID:
+            print("✅ playlist_id tag is correct.")
+        else:
+            print(f"❌ FAILED: playlist_id tag is missing or incorrect!")
+    else:
+        print("⚠️ No raw docs generated.")
+        
+    # 4. TEST SUMMARY SECTIONS
+    print("\n[3/3] Generating summary sections...")
+    summary_sections = preprocess.organising_summary_transcript()
+    print(f"✅ Generated {len(summary_sections)} summary sections.")
 
-
-
-
-
-
-
-
-
-
-#     from youtube_transcript_api import YouTubeTranscriptApi
-#     from youtube_transcript_api.proxies import WebshareProxyConfig
-
-#     ytt_api = YouTubeTranscriptApi(
-#         proxy_config=WebshareProxyConfig(
-#             proxy_username="<proxy-username>",
-#             proxy_password="<proxy-password>",
-#         )
-#     )
-
-# # all requests done by ytt_api will now be proxied through Webshare
-# ytt_api.fetch(video_id)
-
-    # ytt_api  = YouTubeTranscriptApi(
-    # proxy_config=WebshareProxyConfig(
-    #     proxy_username="keibyjxw",
-    #     proxy_password="4s2dl9qpn8ay",
-    # )
-    # )
-
-    # ytt_api.fetch('IubDIhCxDTc')
+    if summary_sections:
+        print("\n--- Checking metadata for summary_sections[0] ---")
+        first_summ_meta = summary_sections[0].metadata
+        print(first_summ_meta)
+        
+        # Check the tags
+        if first_summ_meta.get('video_id') == TEST_VIDEO_ID:
+            print("✅ video_id tag is correct.")
+        else:
+            print(f"❌ FAILED: video_id tag is missing or incorrect!")
+            
+        if first_summ_meta.get('playlist_id') == TEST_PLAYLIST_ID:
+            print("✅ playlist_id tag is correct.")
+        else:
+            print(f"❌ FAILED: playlist_id tag is missing or incorrect!")
+    else:
+        print("⚠️ No summary sections generated.")
+        
+    print("\n--- Test Complete ---")

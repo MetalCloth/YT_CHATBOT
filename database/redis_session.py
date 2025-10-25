@@ -17,6 +17,7 @@ class Value(BaseModel):
     user_id:str
     # message:list[str]
     sender:str
+    playlist_id:Optional[str]=None
     full_summary:Optional[bool]=False
 
 # Load Redis API key from .env
@@ -51,6 +52,7 @@ def msg_to_redis(r:redis.Redis,key,value:Value,channel='to_redis'):
 
     my_message={
         "user_id":key,
+        'playlist_id':value.playlist_id,
         # "message":value.message,
         "sender":value.sender,
         "full_summary":value.full_summary

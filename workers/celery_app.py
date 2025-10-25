@@ -49,6 +49,7 @@ async def asynchronous_process(job):
     user_id=job['user_id']
     sender=job['sender']
     full_summary=job['full_summary']
+    playlist_id=job.get('playlist_id')
     job_info=""
     async with TaskSessionLocal() as db:
         try:
@@ -59,6 +60,7 @@ async def asynchronous_process(job):
             if full_summary:
                 result = await asyncio.to_thread(app2.invoke,{
                     'video_id': job_info['video_id'],
+                    'playlist_id':playlist_id,
                     'documents': [],
                     'question': '',
                     'answer': ""
@@ -67,7 +69,9 @@ async def asynchronous_process(job):
             else:
                 result = await asyncio.to_thread(app.invoke,{
                     'video_id': job_info['video_id'],
+                    'playlist_id':playlist_id,
                     'documents': [],
+                    
                     'question': job_info['question'],
                     'answer': "",
                 })

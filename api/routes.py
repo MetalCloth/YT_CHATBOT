@@ -4,6 +4,7 @@ import fastapi
 from requests import Request
 
 from fastapi import FastAPI,Depends,WebSocket
+from ai_core.utils import PreProcessing
 from workers.task import app,app2
 import time
 import redis.asyncio as aioredis
@@ -27,6 +28,11 @@ api=FastAPI()
 class QueryPayload(BaseModel):
     question: Optional[str]
     full_summary: str = False
+
+class PlaylistQueryPayload(BaseModel):
+    question: Optional[str]
+    full_summary: bool = False
+    video_id: Optional[str] = None # <-- The optional video_id
 
 @api.get('/')
 def root():
@@ -92,11 +98,65 @@ async def query(video_id:str,request:QueryPayload,db:AsyncSession=Depends(get_db
         
         msg_to_redis(r,key,value=Value(
             user_id=key,
+            playlist_id=None,
             # message=[question]
             full_summary=full_summary,
             sender="Human"
         ))
         
+
+        print("SENT TO THE REDIS BITCH")
+
+        return {
+            'response':'Ok so we are now gonna do someshit chef is ready and will cook :)',
+            'job_id':key
+        }
+
+    except Exception as e:
+        print("ERROR A AGYA HOGA BHADWE",e)
+
+
+@api.post('/playlist/{playlist_id}')
+async def query_playlist(
+    playlist_id: str,
+    request: PlaylistQueryPayload, # <-- Use the new payload
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        question = request.question
+        full_summary = request.full_summary
+        video_id_from_body = request.video_id # <-- This is your optional video_id
+        
+        video_id_for_job = video_id_from_body
+        
+        # If user did NOT provide a specific video_id, we must
+        # pick one to be the "entry point" for the job.
+        if not video_id_for_job:
+            print(f"No specific video_id provided. Fetching playlist {playlist_id} to get first video.")
+            playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
+            video_ids_list = PreProcessing.get_playlist_video_ids(playlist_url)
+            
+            if not video_ids_list:
+                raise fastapi.HTTPException(status_code=404, detail="Playlist is empty or not found.")
+            
+            video_id_for_job = video_ids_list[0]
+            print(f"Using first video of playlist as job entry: {video_id_for_job}")
+        
+        # --- Now the code is the same as your other endpoint ---
+        uuid_term = str(uuid.uuid4())
+        key = uuid_term # This is the new job_id
+
+        # await create_table() # (Remove if using lifespan)
+
+        await create_job(db, job_id=key, video_id=video_id_for_job, question=question)
+        print("JOB CREATED")
+
+        msg_to_redis(r, key, value=Value(
+            user_id=key,
+            full_summary=full_summary,
+            sender="Human",
+            playlist_id=playlist_id 
+        ))
 
         print("SENT TO THE REDIS BITCH")
 

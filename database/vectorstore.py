@@ -9,14 +9,14 @@ from langchain_chroma import Chroma
 class Store:
     """Stores into 2 vectorstores one for summarized one for raw and they are interconnected using uuid"""
 
-    def __init__(self,video_id):
+    def __init__(self):
         self.embeddings=OllamaEmbeddings(model='snowflake-arctic-embed:latest')
         self.client1 = chromadb.PersistentClient(path='./unsummarised_docs')
         self.client2 = chromadb.PersistentClient(path='./summarised_docs')
         
         
-        self.unsummarised_vectordb=Chroma(client=self.client1,collection_name=f"vid_{video_id}",embedding_function=self.embeddings)
-        self.summarised_vectordb=Chroma(client=self.client2,collection_name=f"vid_{video_id}",embedding_function=self.embeddings)
+        self.unsummarised_vectordb=Chroma(client=self.client1,collection_name="raw_db",embedding_function=self.embeddings)
+        self.summarised_vectordb=Chroma(client=self.client2,collection_name="summ_db",embedding_function=self.embeddings)
 
     def ingesting_raw_docs(self,raw_docs):
         """Ingesting raw_docs"""
@@ -51,22 +51,20 @@ class Store:
         print('Ingesting summarized_docs successful')
 
     
-    def collection_exists(self,collection_name:str):
+    def collection_exists(self,video_id:str)->bool:
         """Checks if the collection name exists on the vectordb"""
         try:
-            collection=self.client1.get_collection(name=f"vid_{collection_name}")
-            item_count = collection.count()
-            
-            print(f"Collection '{collection_name}' found with {item_count} items.")
-            if item_count<=0:
-                return False
-            
-            print('client',self.client1)
-            print(f"Collection '{collection_name}' found.")
-            return True
-
-        except ValueError:
-            print(f"Collection '{collection_name}' not found.")
+            # Check the raw docs store. If it's here, the summary one should be too.
+            collection = self.client1.get_collection(name="global_raw_docs")
+            result = collection.get(
+                where={"video_id": video_id},
+                limit=1
+            )
+            is_ingested = len(result['ids']) > 0
+            print(f"Check: Video {video_id} is ingested? {is_ingested}")
+            return is_ingested
+        except Exception as e:
+            print(f"Error checking if video is ingested: {e}")
             return False
 
 
@@ -75,8 +73,8 @@ class Store:
 class Retriever:
     """Makes a fucking retriever to do shits in this"""
 
-    def __init__(self,video_id):
-        self.vectorstore=Store(video_id)
+    def __init__(self):
+        self.vectorstore=Store()
         
     def raw_retriever(self,k=2):
         """End result returns retriever"""
