@@ -139,9 +139,6 @@ def vector_search_for_summ_db(state:Youtube):
                 {"video_id": video_id}
             ]
         }
-    elif playlist_id:
-        print(f"Filtering for entire playlist {playlist_id}")
-        search_filter = {"playlist_id": playlist_id}
     else:
         print(f"Filtering for single video {video_id}")
         search_filter = {"video_id": video_id}
@@ -150,7 +147,8 @@ def vector_search_for_summ_db(state:Youtube):
 
     response=summ_retriever.invoke(state['question'])
 
-    state['documents'].append(response)
+    # state['documents'].append(response)
+    state['documents']=response
     return state
 
 
@@ -195,10 +193,10 @@ def vector_search_for_raw_db(state:Youtube):
             ]
         }
 
-    elif playlist_id:
-        # User gave only playlist: "Search the whole playlist"
-        print(f"Filtering for entire playlist {playlist_id}")
-        search_filter = {"playlist_id": playlist_id}
+    # elif playlist_id:
+    #     # User gave only playlist: "Search the whole playlist"
+    #     print(f"Filtering for entire playlist {playlist_id}")
+    #     search_filter = {"playlist_id": playlist_id}
     else:
         # Fallback for /video/{video_id} endpoint (no playlist_id)
         print(f"Filtering for single video {video_id}")
@@ -211,7 +209,7 @@ def vector_search_for_raw_db(state:Youtube):
     raw_retriever=raw_retriever.invoke(state['question'])
 
 
-
+    all_raw_ids=[]
     for doc in raw_retriever:
         raw_ids = doc.metadata.get('raw_chunks_ids', [])
         # Always ensure it's a list
@@ -226,17 +224,27 @@ def vector_search_for_raw_db(state:Youtube):
     
     all_raw_ids = list(dict.fromkeys(all_raw_ids))[:10]
 
-    store = Store(state['video_id'])
+    if not all_raw_ids:
+        print("No raw IDs found from summaries.")
+        state['documents'] = []
+        return state
+    
+    print(f"Fetching {len(all_raw_ids)} raw chunks by ID...")
+    store = Store()
     raw_db = store.unsummarised_vectordb
 
     # Fetch all metadata
-    all_docs = raw_db.get(include=['metadatas', 'documents'])  # 'documents' = page_content
+    all_docs = raw_db.get(ids=all_raw_ids,include=['metadatas', 'documents'])  # 'documents' = page_content
 
     # Build a lookup dict by ID
-    raw_lookup = {meta['id']: doc for meta, doc in zip(all_docs['metadatas'], all_docs['documents'])}
-
-    # Get texts for the selected raw IDs
-    texts = [raw_lookup[i] for i in all_raw_ids if i in raw_lookup]
+    texts = []
+    for i in range(len(all_docs['ids'])):
+        texts.append(
+            Document(
+                page_content=all_docs['documents'][i],
+                metadata=all_docs['metadatas'][i]
+            )
+        )
 
         # texts = [all_docs[i] for i in all_raw_ids if i in all_docs]
 
@@ -246,49 +254,67 @@ def vector_search_for_raw_db(state:Youtube):
     """response gives a document brother"""
 
     
-    state['documents'].append(texts)
+    state['documents']=texts
     return state
 
 def summarize_whole(state:Youtube):
-    # if state['full_summmary']:
-        print("STARTING FULL SUMMARY")
-        try:
-            # .get() pulls the raw data. We only need the documents and metadatas.
-            raw_result = Store().summarised_vectordb.get(include=['metadatas', 'documents'])
+    """
+    This is the 'summary_db' node for graph2.
+    It now correctly filters before getting all docs.
+    """
+    print("STARTING FULL SUMMARY")
+    try:
+        store = Store()
+        db = store.summarised_vectordb
 
-            # If the DB is empty, return an empty list
-            if not raw_result or not raw_result.get('ids'):
-                print("Warehouse is empty. No documents found.")
-                return []
-            
-            # This is the list where we'll store the loot
-            all_details = []
-            
-            # Now, we loop through the raw results and pull out what we want
-            for i in range(len(raw_result['ids'])):
-                metadata = raw_result['metadatas'][i]
-                content = raw_result['documents'][i]
+        # 1. Build the filter logic
+        search_filter = {}
+        playlist_id = state.get('playlist_id')
+        video_id = state.get('video_id') # This is the OPTIONAL filter ID
 
-                # The heist for one item's details
-                details = {
-                    'title': metadata.get('title', 'No Title Found'),
-                    'start_time': metadata.get('start_time', 'N/A'),
-                    'end_time': metadata.get('end_time', 'N/A'),
-                    'page_content': content
-                }
-                all_details.append(details)
-            
-            print(f"Heist successful. Retrieved details for {len(all_details)} documents.")
-            state['documents'].append(all_details)
-            print("ENDED FULL SUMMARY")
+        if playlist_id and video_id:
+             print(f"Filtering summary for playlist {playlist_id} AND video {video_id}")
+             search_filter = {"$and": [{"playlist_id": playlist_id}, {"video_id": video_id}]}
+        # elif playlist_id:
+        #      print(f"Filtering summary for entire playlist {playlist_id}")
+        #      search_filter = {"playlist_id": playlist_id}
+        else:
+             print(f"Filtering summary for single video {state['video_id']}")
+             search_filter = {"video_id": state['video_id']}
+        
+        # 2. Use .get() WITH A 'where' CLAUSE
+        raw_result = db.get(
+            where=search_filter,
+            include=['metadatas', 'documents']
+        )
 
-            return state
+        if not raw_result or not raw_result.get('ids'):
+            print("Warehouse is empty for this filter. No documents found.")
+            state['documents'] = []
+            return state # Return state, not []
+        
+        all_details = []
+        for i in range(len(raw_result['ids'])):
+            metadata = raw_result['metadatas'][i]
+            content = raw_result['documents'][i]
+            details = {
+                'title': metadata.get('title', 'No Title Found'),
+                'start_time': metadata.get('start_time', 'N/A'),
+                'end_time': metadata.get('end_time', 'N/A'),
+                'page_content': content
+            }
+            all_details.append(details)
+        
+        print(f"Heist successful. Retrieved details for {len(all_details)} documents.")
+        state['documents'] = all_details # Use =
+        print("ENDED FULL SUMMARY")
+        return state
 
-        except Exception as e:
-            print(f"Heist failed. An occurred: {e}")
-            return []
+    except Exception as e:
+        print(f"Heist failed. An occurred: {e}")
+        state['documents'] = []
+        return state # Return state, not []
     
-
 def summary_generator(state:Youtube):
     print("DOING FULL SUMMARY_GENERATOR")
     model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
@@ -443,18 +469,32 @@ if __name__=="__main__":
 
     from IPython.display import Image,display
     
+    import shutil
+    # print("Cleaning up old databases...")
+    # if os.path.exists('./unsummarised_docs'): shutil.rmtree('./unsummarised_docs')
+    # if os.path.exists('./summarised_docs'): shutil.rmtree('./summarised_docs')
+    # print("Cleanup complete.")
     display(app.get_graph().draw_ascii())
 
-    while True:
-        query=input('Enter your query')
+    # while True:
+    #     query=input('Enter your query')
 
-        result=app.invoke({
-            'video_id':'Q5L0fycpQZI',
-            'documents':document,
-            'question':query,
-            'answer':"",
-            # "full_summmary":True
-        })
-        print('-----ANSWER-----')
+    #     result=app.invoke({
+    #         'video_id':'Q5L0fycpQZI',
+    #         'documents':document,
+    #         'question':query,
+    #         'answer':"",
+    #         # "full_summmary":True
+    #     })
+    #     print('-----ANSWER-----')
 
-        print(result['answer'])
+    #     print(result['answer'])
+    result =app2.invoke({
+                    'video_id':"lyG52SEo4OM",
+                    'documents': [],
+                    'question': '',
+                    'answer': ""
+                })
+    print("________ANSWER______________")
+
+    print(result['answer'])

@@ -55,7 +55,7 @@ class Store:
         """Checks if the collection name exists on the vectordb"""
         try:
             # Check the raw docs store. If it's here, the summary one should be too.
-            collection = self.client1.get_collection(name="global_raw_docs")
+            collection = self.client1.get_collection(name="raw_db")
             result = collection.get(
                 where={"video_id": video_id},
                 limit=1

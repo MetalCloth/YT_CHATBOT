@@ -79,7 +79,7 @@ class PreProcessing:
 
 
         except Exception as e:
-            print(f'Transcript failure for the video_id {video_id} Reason may be video_id is wrong The real error is {e}')
+            print(f'Transcript failure for the video_id {self.video_id} Reason may be video_id is wrong The real error is {e}')
 
         self.transcript=script
 
