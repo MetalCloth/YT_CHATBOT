@@ -11,7 +11,8 @@ from database.session import create_job,update_job_status,create_table,get_job,e
 
 from workers.task import app,app2
 
-app = Celery(
+
+celery_app = Celery(
     "tasks",
     broker="redis://default:98MDP1pPNJTcUmUNTjRvICOtC7VMRopc@redis-12857.c62.us-east-1-4.ec2.redns.redis-cloud.com:12857/0",
     backend="redis://default:98MDP1pPNJTcUmUNTjRvICOtC7VMRopc@redis-12857.c62.us-east-1-4.ec2.redns.redis-cloud.com:12857/0"
@@ -71,17 +72,29 @@ async def asynchronous_process(job):
                     'video_id': job_info['video_id'],
                     'playlist_id':playlist_id,
                     'documents': [],
-                    
+
                     'question': job_info['question'],
                     'answer': "",
                 })
+            
+            final_answer_text = "Error: Answer not found in result." # Default
+            if isinstance(result, dict):
+                final_answer_text = result.get('answer', "Error: 'answer' key missing.")
+            else:
+                print(f"Warning: Graph invocation returned unexpected type: {type(result)}")
+                final_answer_text = str(result) # Fallback
+
+            if not isinstance(final_answer_text, str): # Ensure string
+                 final_answer_text = str(final_answer_text)
 
             summary_text = json.dumps(result)
+
+            print("SUMMARY TEXT SHOULD BE",summary_text[:15])
                 
 
             # Update Postgres
             print("JOB INFO IS OR SHOULD ",job_info)
-            await update_job_status(db, job_id=job_info['job_id'], status='SUCCESS', summary=summary_text)
+            await update_job_status(db, job_id=job_info['job_id'], status='SUCCESS', summary=final_answer_text)
 
             print(f"CELERY WORKER: PostgreSQL update for job '{user_id}' complete.")
             """Adding a function to update redis shit tooo"""
@@ -92,6 +105,7 @@ async def asynchronous_process(job):
                 sender="AI",
             )
             
+            
 
             msg_to_redis(r,user_id,value,channel='from_redis')
 
@@ -99,7 +113,7 @@ async def asynchronous_process(job):
 
 
             print(f"Job {job_info['video_id']} processed successfully.")
-            return {"response": summary_text}
+            return {"response": final_answer_text}
 
         except Exception as e:
             print(f"Error processing job {job_info['video_id']}: {e}")
@@ -149,7 +163,7 @@ async def asynchronous_process(job):
 
 
 
-@app.task
+@celery_app.task
 def process_video_summary(job):
     return asyncio.run(asynchronous_process(job))
 

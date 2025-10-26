@@ -69,22 +69,27 @@ def ingesting_video(state:Youtube):
     print('ingestion compleete')
     
 
-
 def shortcut(state:Youtube):
-    """Basically shortcut baby if to ingest or to continue"""
-    
+    """
+    Checks if ingestion is needed.
+    Routes to single video, batch, or skips.
+    """
     print('checking if ingestion needed')
+    video_id_input = state['video_id']
+    db_store = Store()
 
-    db_store=Store()
-
-    
-    verdict=db_store.collection_exists(state['video_id'])
-
-    if verdict:
-        return 'exist'
-    
+    # --- KEY CHANGE ---
+    if "," in video_id_input:
+        # Case 1: It's a playlist-wide job (e.g., "v1,v2,v3")
+        print(f"Shortcut: Playlist job detected. Routing to batch ingest.")
+        return 'batch_ingest' # New path
     else:
-        return 'not_exist'
+        # Case 2: Single Video Job (e.g., "v1")
+        print(f"Shortcut: Checking single video {video_id_input}")
+        verdict = db_store.collection_exists(video_id_input)
+        return 'exist' if verdict else 'not_exist'
+    
+
 
 
 def condition(state:Youtube):
@@ -116,6 +121,35 @@ def condition(state:Youtube):
     
     # return 'summary'
 
+def _build_search_filter(state: Youtube) -> dict:
+    """Helper function to build the correct Chroma filter."""
+    playlist_id = state.get('playlist_id')
+    video_id_str = state.get('video_id') # This is "v1" or "v1,v2,v3"
+    search_filter = {}
+
+    if "," in video_id_str:
+        # Case 1: Playlist-wide job. Filter by playlist_id ONLY.
+        print(f"Filtering for ENTIRE playlist {playlist_id}")
+        search_filter = {"playlist_id": playlist_id}
+    elif playlist_id and video_id_str:
+        # Case 2: Specific video in a playlist
+        print(f"Filtering for playlist {playlist_id} AND video {video_id_str}")
+        search_filter = {
+            "$and": [
+                {"playlist_id": playlist_id},
+                {"video_id": video_id_str}
+            ]
+        }
+    elif video_id_str:
+        # Case 3: Single video, no playlist (from /status/{video_id} route)
+        print(f"Filtering for single video {video_id_str}")
+        search_filter = {"video_id": video_id_str}
+    else:
+        print("Warning: No video_id or playlist_id found for filter.")
+    
+    return search_filter
+
+
 # @tools
 def vector_search_for_summ_db(state:Youtube):
     """Uses vector search tool only for summarized DB From the metadata of the matching summary documents, 
@@ -125,30 +159,12 @@ def vector_search_for_summ_db(state:Youtube):
     
 
     summ_retriever=Retriever().summarized_retriever(k=5)
-    search_filter = {}
 
-    playlist_id = state.get('playlist_id')
-    video_id = state.get('video_id')
+    search_filter = _build_search_filter(state)
 
-    # 3. Build the filter logic
-    if playlist_id and video_id:
-        print(f"Filtering for playlist {playlist_id} AND video {video_id}")
-        search_filter = {
-            "$and": [
-                {"playlist_id": playlist_id},
-                {"video_id": video_id}
-            ]
-        }
-    else:
-        print(f"Filtering for single video {video_id}")
-        search_filter = {"video_id": video_id}
-
-    summ_retriever.search_kwargs = {"k": 3, "filter": search_filter}
-
-    response=summ_retriever.invoke(state['question'])
-
-    # state['documents'].append(response)
-    state['documents']=response
+    summ_retriever.search_kwargs = {"k": 5, "filter": search_filter}
+    response = summ_retriever.invoke(state['question'])
+    state['documents'] = response
     return state
 
 
@@ -179,28 +195,28 @@ def vector_search_for_raw_db(state:Youtube):
 
 
     raw_retriever = Retriever().summarized_retriever(k=5)
-    search_filter={}
+    search_filter = _build_search_filter(state)
 
-    playlist_id=state.get('playlist_id')
-    video_id=state.get('video_id')
+    # playlist_id=state.get('playlist_id')
+    # video_id=state.get('video_id')
 
-    if playlist_id and video_id:
-        print(f"Filtering for playlist {playlist_id} AND video {video_id}")
-        search_filter = {
-            "$and": [
-                {"playlist_id": playlist_id},
-                {"video_id": video_id}
-            ]
-        }
+    # if playlist_id and video_id:
+    #     print(f"Filtering for playlist {playlist_id} AND video {video_id}")
+    #     search_filter = {
+    #         "$and": [
+    #             {"playlist_id": playlist_id},
+    #             {"video_id": video_id}
+    #         ]
+    #     }
 
-    # elif playlist_id:
-    #     # User gave only playlist: "Search the whole playlist"
-    #     print(f"Filtering for entire playlist {playlist_id}")
-    #     search_filter = {"playlist_id": playlist_id}
-    else:
-        # Fallback for /video/{video_id} endpoint (no playlist_id)
-        print(f"Filtering for single video {video_id}")
-        search_filter = {"video_id": video_id}    
+    # # elif playlist_id:
+    # #     # User gave only playlist: "Search the whole playlist"
+    # #     print(f"Filtering for entire playlist {playlist_id}")
+    # #     search_filter = {"playlist_id": playlist_id}
+    # else:
+    #     # Fallback for /video/{video_id} endpoint (no playlist_id)
+    #     print(f"Filtering for single video {video_id}")
+    #     search_filter = {"video_id": video_id}    
 
     all_raw_ids = []
     raw_retriever.search_kwargs = {"k": 5, "filter": search_filter}
@@ -268,19 +284,19 @@ def summarize_whole(state:Youtube):
         db = store.summarised_vectordb
 
         # 1. Build the filter logic
-        search_filter = {}
-        playlist_id = state.get('playlist_id')
-        video_id = state.get('video_id') # This is the OPTIONAL filter ID
+        search_filter = _build_search_filter(state)
+        # playlist_id = state.get('playlist_id')
+        # video_id = state.get('video_id') # This is the OPTIONAL filter ID
 
-        if playlist_id and video_id:
-             print(f"Filtering summary for playlist {playlist_id} AND video {video_id}")
-             search_filter = {"$and": [{"playlist_id": playlist_id}, {"video_id": video_id}]}
-        # elif playlist_id:
-        #      print(f"Filtering summary for entire playlist {playlist_id}")
-        #      search_filter = {"playlist_id": playlist_id}
-        else:
-             print(f"Filtering summary for single video {state['video_id']}")
-             search_filter = {"video_id": state['video_id']}
+        # if playlist_id and video_id:
+        #      print(f"Filtering summary for playlist {playlist_id} AND video {video_id}")
+        #      search_filter = {"$and": [{"playlist_id": playlist_id}, {"video_id": video_id}]}
+        # # elif playlist_id:
+        # #      print(f"Filtering summary for entire playlist {playlist_id}")
+        # #      search_filter = {"playlist_id": playlist_id}
+        # else:
+        #      print(f"Filtering summary for single video {state['video_id']}")
+        #      search_filter = {"video_id": state['video_id']}
         
         # 2. Use .get() WITH A 'where' CLAUSE
         raw_result = db.get(
@@ -347,6 +363,46 @@ def summary_generator(state:Youtube):
     #     print("MAHABALSESHWAR")
         
 
+def batch_ingestion(state:Youtube):
+    """
+    For playlist only jobs. Loops through the video_id string
+    and ingests any missing videos.
+    """
+    playlist_id = state['playlist_id']
+    video_ids_list = state['video_id'].split(',')
+    print(f"--- BATCH INGESTION START: Playlist {playlist_id} for {len(video_ids_list)} videos ---")
+    
+    db_store = Store()
+    
+    for video_id in video_ids_list:
+        if not video_id: continue # Skip empty strings
+        
+        print(f"Checking video: {video_id}...")
+        is_ingested = db_store.collection_exists(video_id)
+        
+        if is_ingested:
+            print(f"Video {video_id} already ingested. Skipping.")
+        else:
+            print(f"--- NEW INGESTION: {video_id} from playlist {playlist_id} ---")
+            try:
+                # Run the full single-video ingestion pipeline
+                preprocess = PreProcessing(video_id, playlist_id=playlist_id)
+                preprocess.transcribing_video()
+                summary_sections = preprocess.organising_summary_transcript()
+                raw_docs = preprocess.recursive_chunk_snippets(chunk_size=500, chunk_overlap=100)
+                summaries_mapped = preprocess.map_summaries_to_raw_by_time(summary_sections, raw_docs)
+                
+                db_store.ingesting_raw_docs(raw_docs)
+                db_store.ingesting_summarized_docs(summaries_mapped)
+                print(f"--- COMPLETED INGESTION: {video_id} ---")
+            except Exception as e:
+                print(f"!!! FAILED INGESTION for video {video_id}: {e} !!!")
+    
+    print(f"--- BATCH INGESTION COMPLETE: Playlist {playlist_id} ---")
+    return state
+
+
+
 
 def basic_conversation(state:Youtube):
     # model=ChatAnthropic(model='claude-sonnet-4-20250514')
@@ -387,13 +443,14 @@ graph=StateGraph(Youtube)
 graph2=StateGraph(Youtube)
 
 graph2.add_node('ingestion',ingesting_video)
-
+graph2.add_node('batch_ingestion', batch_ingestion)
 graph2.add_node('summary_db',summarize_whole)
 
 graph2.add_node('generate_summary',summary_generator)
 
 
 graph.add_node('ingestion',ingesting_video)
+graph.add_node('batch_ingestion', batch_ingestion)
 graph.add_node('raw_db',vector_search_for_raw_db)
 graph.add_node('summ_db',vector_search_for_summ_db)
 graph.add_node('generate_response',generate_response)
@@ -411,7 +468,8 @@ graph2.add_conditional_edges(
     shortcut,
     {
         'exist': 'summary_db',
-        'not_exist': 'ingestion'
+        'not_exist': 'ingestion',
+        'batch_ingest': 'batch_ingestion'
     }
 )
 
@@ -423,6 +481,7 @@ graph.set_entry_point("shortcut")
 
 # graph2.add_edge(START,'ingestion')
 graph2.add_edge('ingestion','summary_db')
+graph2.add_edge('batch_ingestion', 'summary_db')
 graph2.add_edge('summary_db','generate_summary')
 graph2.add_edge('generate_summary',END)
 
@@ -435,12 +494,13 @@ graph.add_conditional_edges(
     shortcut,
     {
         'exist': 'condition',
-        'not_exist': 'ingestion'
+        'not_exist': 'ingestion',
+        'batch_ingest':'batch_ingestion'
     }
 )
+graph.add_edge('ingestion', 'condition')
+graph.add_edge('batch_ingestion', 'condition')
 
-
-graph.add_edge('ingestion','condition')
 
 graph.add_conditional_edges(
     'condition',
@@ -476,23 +536,11 @@ if __name__=="__main__":
     # print("Cleanup complete.")
     display(app.get_graph().draw_ascii())
 
-    # while True:
-    #     query=input('Enter your query')
 
-    #     result=app.invoke({
-    #         'video_id':'Q5L0fycpQZI',
-    #         'documents':document,
-    #         'question':query,
-    #         'answer':"",
-    #         # "full_summmary":True
-    #     })
-    #     print('-----ANSWER-----')
-
-    #     print(result['answer'])
-    result =app2.invoke({
-                    'video_id':"lyG52SEo4OM",
+    result =app.invoke({
+                    'video_id':"7tOLcNZfPso",
                     'documents': [],
-                    'question': '',
+                    'question': 'what is this git thing',
                     'answer': ""
                 })
     print("________ANSWER______________")

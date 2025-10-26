@@ -127,11 +127,14 @@ async def query_playlist(
         full_summary = request.full_summary
         video_id_from_body = request.video_id # <-- This is your optional video_id
         
-        video_id_for_job = video_id_from_body
-        
+        video_id_for_job = ""
+
+        if video_id_from_body:
+            video_id_for_job=video_id_from_body
+        else:
+
         # If user did NOT provide a specific video_id, we must
         # pick one to be the "entry point" for the job.
-        if not video_id_for_job:
             print(f"No specific video_id provided. Fetching playlist {playlist_id} to get first video.")
             playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
             video_ids_list = PreProcessing.get_playlist_video_ids(playlist_url)
@@ -139,7 +142,7 @@ async def query_playlist(
             if not video_ids_list:
                 raise fastapi.HTTPException(status_code=404, detail="Playlist is empty or not found.")
             
-            video_id_for_job = video_ids_list[0]
+            video_id_for_job = ",".join(video_ids_list)
             print(f"Using first video of playlist as job entry: {video_id_for_job}")
         
         # --- Now the code is the same as your other endpoint ---
@@ -203,8 +206,6 @@ async def websocket_endpoint(websocket:WebSocket,job_id:str):
                 channel=message['channel']
                 print("CHANNEL NAME IS",channel)
                 job_data = json.loads(message["data"])
-
-                
 
                 if job_data['user_id']!=job_id:
                     continue
