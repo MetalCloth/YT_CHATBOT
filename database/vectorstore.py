@@ -25,9 +25,9 @@ class Store:
                 self.unsummarised_vectordb.add_documents(raw_docs)
         
         except Exception as e:
-            print(f'Error maybe the raw_docs is not made or vectordb is fuckedup Real error is btw {e}')
+            print(f'THIS MESSAGE IS FROM VECTORSTORE.PY Error maybe the raw_docs is not made or vectordb is fuckedup Real error is btw {e}')
 
-        print('Ingesting raw_docs successful')
+        print('ITHIS MESSAGE IS FROM VECTORSTORE.PY ngesting raw_docs successful')
 
     def ingesting_summarized_docs(self,summarized_docs):
         """Ingesting summarized_docs"""
@@ -37,7 +37,7 @@ class Store:
                     id_data=doc.metadata['raw_chunks_ids']
                     
                     if isinstance(id_data, list):
-                        print("Found a list, converting to string...")
+                        print("FTHIS MESSAGE IS FROM VECTORSTORE.PY ound a list, converting to string...")
                         doc.metadata['raw_chunks_ids'] = ",".join(id_data)
 
 
@@ -46,9 +46,9 @@ class Store:
             
         
         except Exception as e:
-            print(f'Error maybe the summarized_docs is not made or vectordb is fuckedup Real error is btw {e}')
+            print(f'THIS MESSAGE IS FROM VECTORSTORE.PY Error maybe the summarized_docs is not made or vectordb is fuckedup Real error is btw {e}')
 
-        print('Ingesting summarized_docs successful')
+        print('ITHIS MESSAGE IS FROM VECTORSTORE.PY ngesting summarized_docs successful')
 
     
     def collection_exists(self,video_id:str)->bool:
@@ -61,10 +61,10 @@ class Store:
                 limit=1
             )
             is_ingested = len(result['ids']) > 0
-            print(f"Check: Video {video_id} is ingested? {is_ingested}")
+            print(f"THIS MESSAGE IS FROM VECTORSTORE.PY Check: Video {video_id} is ingested? {is_ingested}")
             return is_ingested
         except Exception as e:
-            print(f"Error checking if video is ingested: {e}")
+            print(f"THIS MESSAGE IS FROM VECTORSTORE.PY Error checking if video is ingested: {e}")
             return False
 
 
@@ -88,4 +88,3 @@ class Retriever:
         summarized_retriever=self.vectorstore.summarised_vectordb.as_retriever(search_type="similarity",search_kwargs={"k":k})
 
         return summarized_retriever
-

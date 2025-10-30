@@ -140,9 +140,3 @@ Your final output must be a single, clean JSON object.
 HERE IS THE FULL VIDEO TRANSCRIPT TO ANALYZE:
 {transcript}
 """)
-
-
-
-
-
-

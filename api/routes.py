@@ -3,36 +3,47 @@
 import fastapi
 from requests import Request
 
-from fastapi import FastAPI,Depends,WebSocket
+from fastapi import FastAPI,Depends,WebSocket,HTTPException
 from ai_core.utils import PreProcessing
-from workers.task import app,app2
+# from workers.task import qa_app, summary_app # No longer needed here
 import time
 import redis.asyncio as aioredis
+from contextlib import asynccontextmanager # <-- IMPORT THIS
 
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 
-from database.session import create_job,update_job_status,create_table,get_job,engine,AsyncSessionLocal
+# <--- MODIFIED: Importing all our new DB functions --->
+from database.session import (
+    create_job, update_job_status, create_table, get_job, engine, 
+    AsyncSessionLocal, add_chat_message,
+)
+from database.redis_session import (
+    redis, receive_msg_from_redis, msg_to_redis, r, Value,
+    add_videos_to_session_redis, get_session_videos_redis
+)
+
 import uuid
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
-from database.redis_session import redis,receive_msg_from_redis,msg_to_redis,r,Value
-
 import json
-
 
 
 api=FastAPI()
 
 
-class QueryPayload(BaseModel):
-    question: Optional[str]
-    full_summary: str = False
 
-class PlaylistQueryPayload(BaseModel):
-    question: Optional[str]
+class StartChatPayload(BaseModel):
+    user_id: str # The stable user ID (e.g., 'e123')
+
+class AddVideoPayload(BaseModel):
+    video_id: Optional[str] = None
+    playlist_id: Optional[str] = None
+
+class AskQuestionPayload(BaseModel):
+    question: Optional[str] = None
     full_summary: bool = False
-    video_id: Optional[str] = None # <-- The optional video_id
+
 
 @api.get('/')
 def root():
@@ -44,132 +55,121 @@ async def get_db():
         yield db
 
 
-"""THERE IS FRONTEND WHO WILL GIMME THE FUCKING SHITS"""
-"""LIKE /status/job_id in which job_id will ecrypted text containing my bois request"""
-"""ALSO /status/summary/url in which job_id will provide summary I think i should do it first"""
-
-
 @api.get('/health')
 def health():
     return {'health':200}
 
 
-"""request:
-    {}
+
+@api.post('/chat/start')
+async def start_new_chat(payload: StartChatPayload, db:AsyncSession=Depends(get_db)):
     """
-
-
-
-@api.post('/status/{video_id}')
-async def query(video_id:str,request:QueryPayload,db:AsyncSession=Depends(get_db)):
+    Creates a new, empty session for a user.
+    Returns a new session_id.
+    """
     try:
+        await create_table() 
         
-        question=request.question
+        session_id = str(uuid.uuid4())
 
-        
-
-        full_summary=request.full_summary
-        
-        if len(full_summary)==4:
-            full_summary=True
-
-        else:
-            full_summary=False
-
-        uuid_term=str(uuid.uuid4())
-
-        key=uuid_term
-
-        create_table()
-
-        print("TABLE CREATED OR NOT IDK")
-
-        await create_job(db,job_id=key,video_id=video_id,question=question)
-
-        print("JOB CREATED")
-
-        print("KEY IS ",key)
-
-        print("SLEEPING FOR 28 SECONDS")
-
-        await asyncio.sleep(12)
-
-        print("I AM aWAkE DUMBASS")
-        
-        msg_to_redis(r,key,value=Value(
-            user_id=key,
-            playlist_id=None,
-            # message=[question]
-            full_summary=full_summary,
-            sender="Human"
-        ))
-        
-
-        print("SENT TO THE REDIS BITCH")
+        print(f"THIS MESSAGE IS FROM ROUTES.PY Created new session {session_id} for user {payload.user_id}")
 
         return {
-            'response':'Ok so we are now gonna do someshit chef is ready and will cook :)',
-            'job_id':key
+            "message": "New chat session created",
+            "session_id": session_id,
+            "user_id": payload.user_id
         }
-
     except Exception as e:
-        print("ERROR A AGYA HOGA BHADWE",e)
+        print(f"THIS MESSAGE IS FROM ROUTES.PY  Error in /chat/start: {e}")
+        raise HTTPException(status_code=500, detail="Could not start chat session.")
 
 
-@api.post('/playlist/{playlist_id}')
-async def query_playlist(
-    playlist_id: str,
-    request: PlaylistQueryPayload, # <-- Use the new payload
-    db: AsyncSession = Depends(get_db)
-):
+@api.post('/chat/{session_id}/add')
+async def add_videos_to_chat(session_id: str, payload: AddVideoPayload):
+    """
+    Adds one or more videos/playlists to session
+    """
     try:
-        question = request.question
-        full_summary = request.full_summary
-        video_id_from_body = request.video_id # <-- This is your optional video_id
-        
-        video_id_for_job = ""
+        if not payload.video_id and not payload.playlist_id:
+            raise HTTPException(status_code=400, detail="You provide a video_id or a playlist_id.")
 
-        if video_id_from_body:
-            video_id_for_job=video_id_from_body
-        else:
+        video_ids_to_add: List[str] = []
 
-        # If user did NOT provide a specific video_id, we must
-        # pick one to be the "entry point" for the job.
-            print(f"No specific video_id provided. Fetching playlist {playlist_id} to get first video.")
-            playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
+        if payload.playlist_id:
+            playlist_url = f"https://www.youtube.com/playlist?list={payload.playlist_id}"
             video_ids_list = PreProcessing.get_playlist_video_ids(playlist_url)
-            
             if not video_ids_list:
-                raise fastapi.HTTPException(status_code=404, detail="Playlist is empty or not found.")
-            
-            video_id_for_job = ",".join(video_ids_list)
-            print(f"Using first video of playlist as job entry: {video_id_for_job}")
+                raise HTTPException(status_code=404, detail="Playlist is empty or not found bhangi.")
+            video_ids_to_add.extend(video_ids_list)
         
-        # --- Now the code is the same as your other endpoint ---
-        uuid_term = str(uuid.uuid4())
-        key = uuid_term # This is the new job_id
+        if payload.video_id:
+            if payload.video_id not in video_ids_to_add:
+                video_ids_to_add.append(payload.video_id)
+        
+        if not video_ids_to_add:
+            raise HTTPException(status_code=400, detail="No valid videos found to add.")
 
-        # await create_table() # (Remove if using lifespan)
-
-        await create_job(db, job_id=key, video_id=video_id_for_job, question=question)
-        print("JOB CREATED")
-
-        msg_to_redis(r, key, value=Value(
-            user_id=key,
-            full_summary=full_summary,
-            sender="Human",
-            playlist_id=playlist_id 
-        ))
-
-        print("SENT TO THE REDIS BITCH")
+        ### adding videos to session_redis 
+        add_videos_to_session_redis(r, session_id, video_ids_to_add)
 
         return {
-            'response':'Ok so we are now gonna do someshit chef is ready and will cook :)',
-            'job_id':key
+            "message": f"Added {len(video_ids_to_add)} video(s) to session {session_id}",
+            "session_id": session_id,
+            "added_videos": video_ids_to_add
+        }
+    except Exception as e:
+        print(f"THIS MESSAGE IS FROM ROUTES.PY  Error in /chat/add: {e}")
+        raise HTTPException(status_code=500, detail="Could not add videos to session.")
+
+
+@api.post('/chat/{session_id}/ask')
+async def ask_question(session_id: str, payload: AskQuestionPayload, db:AsyncSession=Depends(get_db)):
+    """
+    Asks a question (or requests a full_summary) within a "study room".
+    This triggers the RAG pipeline.
+    """
+    try:
+        video_ids = get_session_videos_redis(r, session_id)
+        if not video_ids:
+            raise HTTPException(status_code=404, detail="No videos found in this session. Add videos first using the /add endpoint.")
+        
+        question_text = payload.question
+        if payload.full_summary:
+            if payload.question:
+                print("WTHIS MESSAGE IS FROM ROUTES.PY  arning: Both question and full_summary=true received. Prioritizing full_summary.")
+            question_text = "GENERATE FULL SUMMARY" # Use a consistent internal query
+        elif not question_text:
+             raise HTTPException(status_code=400, detail="You must provide a 'question' or set 'full_summary' to true.")
+        
+        await add_chat_message(db, session_id, "human", question_text)
+
+        job_id_key = str(uuid.uuid4())
+        
+        video_id_string = ",".join(video_ids) 
+        ### makes into list seperated by ,
+        
+        await create_job(db, job_id=job_id_key, video_id=video_id_string, question=question_text)
+
+        msg_to_redis(r, job_id_key, value=Value(
+            user_id=job_id_key,        
+            session_id=session_id,     
+            full_summary=payload.full_summary,
+            sender="Human",
+        ))
+
+        print(f"THIS MESSAGE IS FROM ROUTES.PY  Sent job {job_id_key} for session {session_id} to Redis")
+
+        return {
+            'response': 'Your question is being processed. Connect via WebSocket for the answer.',
+            'job_id': job_id_key,
+            'session_id': session_id
         }
 
+    except HTTPException as e:
+        raise e 
     except Exception as e:
-        print("ERROR A AGYA HOGA BHADWE",e)
+        print(f"THIS MESSAGE IS FROM ROUTES.PY  {e}")
+        raise HTTPException(status_code=500, detail="Could not process question.")
 
 
 @api.websocket('/ws/status/{job_id}')
@@ -179,110 +179,49 @@ async def websocket_endpoint(websocket:WebSocket,job_id:str):
     await websocket.accept()
     os.environ['REDIS_API_KEY'] = os.getenv('REDIS_API_KEY')
 
-    # Connect to Redis
-#     r = aioredis.from_url(
-#     f"redis://default:{os.environ['REDIS_API_KEY']}@redis-12857.c62.us-east-1-4.ec2.redns.redis-cloud.com:12857/0",
-#     decode_responses=True
-# )
-
-    from workers.celery_app import process_video_summary
-
-    print("SERVER ONLINE")
+    print("STHIS MESSAGE IS FROM ROUTES.PY  ERVER ONLINE")
 
     redis_url = f"redis://default:{os.getenv('REDIS_API_KEY')}@redis-12857.c62.us-east-1-4.ec2.redns.redis-cloud.com:12857/0"
     r = aioredis.from_url(redis_url, decode_responses=True)
 
-    # await pubsub.subscribe('from_redis')
     pubsub = r.pubsub()
     await pubsub.subscribe('from_redis')
 
-    
-
-    print("SUBSCRIBED TO REDIS BY API  {job_id}NOW LISTENING")
+    print("STHIS MESSAGE IS FROM ROUTES.PY  UBSCRIBED TO REDIS BY API  {job_id}NOW LISTENING")
 
     try:
         async for message in pubsub.listen():
             if message['type']=='message':
                 channel=message['channel']
-                print("CHANNEL NAME IS",channel)
+                print("CTHIS MESSAGE IS FROM ROUTES.PY  HANNEL NAME IS",channel)
                 job_data = json.loads(message["data"])
 
                 if job_data['user_id']!=job_id:
                     continue
 
 
-                print("SENDING TO CELERY")
+                print("STHIS MESSAGE IS FROM ROUTES.PY  ENDING TO CELERY")
                 
                 
-                print(f'New message on channel "from redis"')
+                print(f'THIS MESSAGE IS FROM ROUTES.PY  New message on channel "from redis"')
 
                 summary=""
                 async with AsyncSessionLocal() as db:
                         job_info = await get_job(db, job_id=job_id)
                         if job_info:
-                            summary = job_info['response'] # Assuming 'response' holds the summary
+                            summary = job_info['response'] 
                     
-                    # Send the final summary to the client
                 await r.blpop(job_data['user_id'],timeout=0)
 
-                print("GOT THE SUMMMARY BABYYYYYY",summary)
+                print("GTHIS MESSAGE IS FROM ROUTES.PY  OT THE SUMMMARY BABYYYYYY",summary)
                 await websocket.send_text(summary)
                 break
 
     except Exception as e:
-        print("ERROR OCCURED IN WEBSOCKET",e)
+        print("ETHIS MESSAGE IS FROM ROUTES.PY  RROR OCCURED IN WEBSOCKET",e)
 
     finally:
-        print(f"Client  disconnecting.")
+        print(f"THIS MESSAGE IS FROM ROUTES.PY  Client  disconnecting.")
         await pubsub.unsubscribe('from_redis')
         await r.close()
         await websocket.close()
-                
-
-
-
-                # x=r.blpop(job_data['user_id'],timeout=0)
-
-                # print("USING HELL FROM ROUTES")
-
-                # response=await send_to_hell.delay(job_data)
-                # print("SENT HELL FROM ROUTES")
-
-
-                # await websocket.send_text(response)
-
-        
-
-    
-
-
-
-        
-
-
-    #     from IPython.display import Image,display
-    
-    #     display(app.get_graph().draw_ascii())
-
-    
-    #     if full_summary:
-    #         result=app2.invoke({
-    #             'video_id':video_id,
-    #             'documents':[],
-    #             'question':'',
-    #             'answer':""
-    #         })
-        
-    #     else:
-    #         result=app.invoke({
-    #             'video_id':video_id,
-    #             'documents':[],
-    #             'question':question,
-    #             'answer':"",
-    #             # "full_summmary":full_summary
-    #         })
-
-    #     return {'response':result}
-
-    # except Exception as e:
-    #     print("ERROR A AGYA HOGA BHADWE",e)

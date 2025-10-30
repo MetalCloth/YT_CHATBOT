@@ -24,7 +24,6 @@ from langchain_chroma import Chroma
 from langchain.output_parsers import PydanticOutputParser
 
 from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.proxies import WebshareProxyConfig
 
 """PREPROCESSING AND CONVERTING TO RAW AND SUMM DOCS"""
 
@@ -39,7 +38,6 @@ class Section(BaseModel):
     end_time: str
     # video_id:str
 
-# FIX 1: Create a wrapper model to hold the list of sections
 class Sections(BaseModel):
     sections: List[Section]
 
@@ -79,11 +77,11 @@ class PreProcessing:
 
 
         except Exception as e:
-            print(f'Transcript failure for the video_id {self.video_id} Reason may be video_id is wrong The real error is {e}')
+            print(f'THIS MESSAGE IS FROM UTILS.PY Transcript failure for the video_id {self.video_id} Reason may be video_id is wrong The real error is {e}')
 
         self.transcript=script
 
-        print('Transcription is done')
+        print('TTHIS MESSAGE IS FROM UTILS.PY ranscription is done')
     
     def recursive_chunk_snippets(self, chunk_size=500, chunk_overlap=100):
         """
@@ -263,10 +261,10 @@ class PreProcessing:
                     for video in playlist_info['entries']:
                         if video and 'id' in video:
                             video_ids.append(video['id'])
-                print(f"Found {len(video_ids)} videos in the playlist.")
+                print(f"THIS MESSAGE IS FROM UTILS.PY Found {len(video_ids)} videos in the playlist.")
                 
             except Exception as e:
-                print(f"Error extracting playlist info: {e}")
+                print(f"THIS MESSAGE IS FROM UTILS.PY Error extracting playlist info: {e}")
                 return None
                 
         return video_ids
@@ -279,62 +277,62 @@ if __name__=="__main__":
     TEST_VIDEO_ID = 'IubDIhCxDTc' # A short video
     TEST_PLAYLIST_ID = None
     
-    print(f"--- Testing PreProcessing with video_id: {TEST_VIDEO_ID} and playlist_id: {TEST_PLAYLIST_ID} ---")
+    print(f"THIS MESSAGE IS FROM UTILS.PY --- Testing PreProcessing with video_id: {TEST_VIDEO_ID} and playlist_id: {TEST_PLAYLIST_ID} ---")
 
     # 2. INITIALIZE THE CLASS with both IDs
     preprocess = PreProcessing(video_id=TEST_VIDEO_ID, playlist_id=TEST_PLAYLIST_ID)
     
-    print("\n[1/3] Transcribing video...")
+    print("\nTHIS MESSAGE IS FROM UTILS.PY [1/3] Transcribing video...")
     preprocess.transcribing_video()
     if not preprocess.transcript:
-        print("🔴 FAILED: Could not fetch transcript. Exiting.")
+        print("🔴THIS MESSAGE IS FROM UTILS.PY  FAILED: Could not fetch transcript. Exiting.")
         exit()
-    print("✅ Transcription complete.")
+    print("✅THIS MESSAGE IS FROM UTILS.PY  Transcription complete.")
 
     # 3. TEST RAW CHUNKS
-    print("\n[2/3] Generating raw document chunks...")
+    print("\nTHIS MESSAGE IS FROM UTILS.PY [2/3] Generating raw document chunks...")
     raw_docs = preprocess.recursive_chunk_snippets()
-    print(f"✅ Generated {len(raw_docs)} raw chunks.")
+    print(f"THIS MESSAGE IS FROM UTILS.PY ✅ Generated {len(raw_docs)} raw chunks.")
     
     if raw_docs:
-        print("\n--- Checking metadata for raw_docs[0] ---")
+        print("\nTHIS MESSAGE IS FROM UTILS.PY --- Checking metadata for raw_docs[0] ---")
         first_raw_meta = raw_docs[0].metadata
         print(first_raw_meta)
         
         # Check the tags
         if first_raw_meta.get('video_id') == TEST_VIDEO_ID:
-            print("✅ video_id tag is correct.")
+            print("✅THIS MESSAGE IS FROM UTILS.PY  video_id tag is correct.")
         else:
-            print(f"❌ FAILED: video_id tag is missing or incorrect!")
+            print(f"THIS MESSAGE IS FROM UTILS.PY ❌ FAILED: video_id tag is missing or incorrect!")
             
         if first_raw_meta.get('playlist_id') == TEST_PLAYLIST_ID:
-            print("✅ playlist_id tag is correct.")
+            print("✅THIS MESSAGE IS FROM UTILS.PY  playlist_id tag is correct.")
         else:
-            print(f"❌ FAILED: playlist_id tag is missing or incorrect!")
+            print(f"THIS MESSAGE IS FROM UTILS.PY ❌ FAILED: playlist_id tag is missing or incorrect!")
     else:
-        print("⚠️ No raw docs generated.")
+        print("⚠️THIS MESSAGE IS FROM UTILS.PY  No raw docs generated.")
         
     # 4. TEST SUMMARY SECTIONS
-    print("\n[3/3] Generating summary sections...")
+    print("\nTHIS MESSAGE IS FROM UTILS.PY [3/3] Generating summary sections...")
     summary_sections = preprocess.organising_summary_transcript()
-    print(f"✅ Generated {len(summary_sections)} summary sections.")
+    print(f"THIS MESSAGE IS FROM UTILS.PY ✅ Generated {len(summary_sections)} summary sections.")
 
     if summary_sections:
-        print("\n--- Checking metadata for summary_sections[0] ---")
+        print("\nTHIS MESSAGE IS FROM UTILS.PY --- Checking metadata for summary_sections[0] ---")
         first_summ_meta = summary_sections[0].metadata
         print(first_summ_meta)
         
         # Check the tags
         if first_summ_meta.get('video_id') == TEST_VIDEO_ID:
-            print("✅ video_id tag is correct.")
+            print("✅THIS MESSAGE IS FROM UTILS.PY  video_id tag is correct.")
         else:
-            print(f"❌ FAILED: video_id tag is missing or incorrect!")
+            print(f"THIS MESSAGE IS FROM UTILS.PY ❌ FAILED: video_id tag is missing or incorrect!")
             
         if first_summ_meta.get('playlist_id') == TEST_PLAYLIST_ID:
-            print("✅ playlist_id tag is correct.")
+            print("✅THIS MESSAGE IS FROM UTILS.PY  playlist_id tag is correct.")
         else:
-            print(f"❌ FAILED: playlist_id tag is missing or incorrect!")
+            print(f"THIS MESSAGE IS FROM UTILS.PY ❌ FAILED: playlist_id tag is missing or incorrect!")
     else:
-        print("⚠️ No summary sections generated.")
+        print("⚠️THIS MESSAGE IS FROM UTILS.PY  No summary sections generated.")
         
-    print("\n--- Test Complete ---")
+    print("\nTHIS MESSAGE IS FROM UTILS.PY --- Test Complete ---")

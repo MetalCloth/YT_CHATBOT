@@ -1,8 +1,14 @@
 import streamlit as st
 import requests
 import re
+import uuid
 
 FASTAPI_URL = "http://127.0.0.1:8000"
+
+# Initialize session state for session_id if not already present
+if 'session_id' not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+    print(f"Generated new session_id: {st.session_state.session_id}")
 
 # --- Helper Function ---
 def extract_video_id(video_url_or_id):
@@ -28,6 +34,9 @@ st.set_page_config(page_title="Video Query App", layout="wide")
 
 st.title("🎬 Video Query App")
 st.markdown("This app lets you ask questions about a YouTube video. It uses a FastAPI backend to process the request.")
+
+st.sidebar.subheader("Session Information")
+st.sidebar.write(f"**Session ID:** {st.session_state.session_id}")
 
 # --- Instructions ---
 with st.expander("How to use this app", expanded=True):
@@ -66,7 +75,7 @@ if st.button("Get Answer", type="primary"):
             with st.spinner(f"Processing video `{video_id}`... Please wait."):
                 try:
                     # The endpoint URL for the POST request
-                    endpoint = f"{FASTAPI_URL}/status/{video_id}"
+                    endpoint = f"{FASTAPI_URL}/chat"
                     
                     # The JSON payload for the request
                     # The backend expects a string, so we convert the boolean to a string.
@@ -75,6 +84,8 @@ if st.button("Get Answer", type="primary"):
                         question=''
                         
                     payload = {
+                        "video_id":video_id,
+                        "session_id":st.session_state.session_id,
                         "question": question,
                         "full_summary": str(full_summary)
                     }

@@ -7,9 +7,14 @@ import json
 import uuid
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from database.session import create_job,update_job_status,create_table,get_job,engine,AsyncSessionLocal,DATABASE_URL
+from database.session import (
+    create_job, update_job_status, create_table, get_job, engine, 
+    AsyncSessionLocal, DATABASE_URL,
+    add_chat_message, get_chat_history
+)
+from database.redis_session import msg_to_redis, r, Value
 
-from workers.task import app,app2
+from workers.task import qa_app, summary_app
 
 
 celery_app = Celery(
@@ -23,154 +28,119 @@ async def update_postgres(job_id: str, status: str, summary: str):
     
     async with AsyncSessionLocal() as db:
         await update_job_status(db, job_id=job_id, status=status, summary=summary)
-        print(f"CELERY WORKER: PostgreSQL update for job '{job_id}' complete.")
+        print(f"THIS MESSAGE IS FROM CELERY.PY CELERY WORKER: PostgreSQL update for job '{job_id}' complete.")
 
 
 async def get_postgres_job(job_id: str):
     async with AsyncSessionLocal() as db:
         job=await get_job(db, job_id=job_id)
-        print(f"CELERY WORKER: postgres job  '{job_id}' complete.")
+        print(f"THIS MESSAGE IS FROM CELERY.PY CELERY WORKER: postgres job  '{job_id}' complete.")
         return job
 
 
-
-
 async def asynchronous_process(job):
-    from database.redis_session import msg_to_redis,r,Value
-
-    """This is triggered whenever the redis thingy is changed or mutated or updated"""
-
-    #     "user_id":key,
-        # # "message":value.message,
-        # "sender":"Human",
-        # "full_summary":value.full_summary
+    """
+    This is the main "Exam Study Session" worker.
+    It fetches all context (videos + chat history) and runs the RAG.
+    """
+    
     engine=create_async_engine(DATABASE_URL)
     TaskSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    user_id=job['user_id']
-    sender=job['sender']
-    full_summary=job['full_summary']
-    playlist_id=job.get('playlist_id')
-    job_info=""
-    async with TaskSessionLocal() as db:
-        try:
-            job_info=await get_job(db, job_id=user_id)
-            print(f"CELERY WORKER: postgres job  '{user_id}' complete.")
-            result=""
-        # Process using your graph apps
-            if full_summary:
-                result = await asyncio.to_thread(app2.invoke,{
-                    'video_id': job_info['video_id'],
-                    'playlist_id':playlist_id,
-                    'documents': [],
-                    'question': '',
-                    'answer': ""
-                })
-                
-            else:
-                result = await asyncio.to_thread(app.invoke,{
-                    'video_id': job_info['video_id'],
-                    'playlist_id':playlist_id,
-                    'documents': [],
+    job_id = job['user_id']        
+    session_id = job['session_id'] 
+    full_summary = job['full_summary']
+    
+    print(f"THIS MESSAGE IS FROM CELERY.PY --- Processing Job {job_id} for Session {session_id} ---")
 
-                    'question': job_info['question'],
-                    'answer': "",
-                })
+    job_info = ""
+    async with TaskSessionLocal() as db:
+        print("THIS MESSAGE IS FROM CELERY.PY GONNA START GETTING POSTGRESQL JOB")
+        try:
+            job_info = await get_job(db,job_id)
+            if not job_info:
+                raise Exception(f"No job info found for job_id {job_id}")
+                
+            question = job_info['question']
+            video_id_string = job_info['video_id'] 
+
+            print("GTHIS MESSAGE IS FROM CELERY.PY OT POSTGRES JOB LETS SEE HOW IT GOES")
+            chat_history = await get_chat_history(db, session_id=session_id)
+
+            print("GTHIS MESSAGE IS FROM CELERY.PY OT CHATHISTORY LETS SEE HOW IT GOES")
+
+            print(f"THIS MESSAGE IS FROM CELERY.PY Retrieved {len(chat_history)} previous messages.")
+
+
+#  CREATE TABLE IF NOT EXISTS data (
+#             id SERIAL PRIMARY KEY,
+#             job_id TEXT UNIQUE NOT NULL,
+#             video_id TEXT NOT NULL,
+#             question TEXT,
+#             status TEXT NOT NULL,
+#             response TEXT,
+#             created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (NOW() at time zone 'utc')
+#         );
+
+            # if full_summary==True:
+            #     graph_state={
+            #         'video_id':video_id_string,
+            #         'playlist_id':None,
+            #         'chat_history':[],
+            #         'session_id':session_id,
+
+            #     }
             
-            final_answer_text = "Error: Answer not found in result." # Default
+            # else:
+
+
+            graph_state = {
+                'video_id': video_id_string,  
+                'playlist_id': None,          
+                'session_id': session_id,     
+                'chat_history': chat_history, 
+                'documents': [],
+                'question': question,
+                'answer': "",
+            }
+
+            print("Running main graph ")
+            result = await asyncio.to_thread(qa_app.invoke, graph_state)
+            final_answer_text = "Error: Answer not found in result." 
             if isinstance(result, dict):
                 final_answer_text = result.get('answer', "Error: 'answer' key missing.")
             else:
-                print(f"Warning: Graph invocation returned unexpected type: {type(result)}")
-                final_answer_text = str(result) # Fallback
-
-            if not isinstance(final_answer_text, str): # Ensure string
+                print(f"THIS MESSAGE IS FROM CELERY.PY Warning: Graph invocation returned unexpected type: {type(result)}")
+                final_answer_text = str(result) 
+            
+            if not isinstance(final_answer_text, str):
                  final_answer_text = str(final_answer_text)
 
-            summary_text = json.dumps(result)
+            print(f"THIS MESSAGE IS FROM CELERY.PY Final answer generated: {final_answer_text[:50]}...")
 
-            print("SUMMARY TEXT SHOULD BE",summary_text[:15])
-                
+            await add_chat_message(db, session_id, "ai", final_answer_text)
 
-            # Update Postgres
-            print("JOB INFO IS OR SHOULD ",job_info)
-            await update_job_status(db, job_id=job_info['job_id'], status='SUCCESS', summary=final_answer_text)
+            await update_job_status(db, job_id=job_id, status='SUCCESS', summary=final_answer_text)
 
-            print(f"CELERY WORKER: PostgreSQL update for job '{user_id}' complete.")
-            """Adding a function to update redis shit tooo"""
-
-        
-            value=Value(
-                user_id=user_id,
+            print(f"THIS MESSAGE IS FROM CELERY.PY CELERY WORKER: PostgreSQL update for job '{job_id}' complete.")
+            
+            value = Value(
+                user_id=job_id,
                 sender="AI",
+                session_id=session_id
             )
-            
-            
+            msg_to_redis(r, job_id, value, channel='from_redis')
 
-            msg_to_redis(r,user_id,value,channel='from_redis')
-
-            print("SENT NOW THE ANSWER KEY TO THE REDIS TOO")
-
-
-            print(f"Job {job_info['video_id']} processed successfully.")
+            print(f"THIS MESSAGE IS FROM CELERY.PY --- Job {job_id} Processed Successfully ---")
             return {"response": final_answer_text}
 
         except Exception as e:
-            print(f"Error processing job {job_info['video_id']}: {e}")
-            return {"response": f"Error -> {e}"}     
+            return {"response": f"Error -> {e}"} 
 
         finally:
-            await engine.dispose()       
-        
-
-# """This function will recieve update from redis and will blpop and fetch postgresql and kindly send to api ig"""
-# async def redis_celery_postgresql_api(job):
-#     engine = create_async_engine(DATABASE_URL)
-#     TaskSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    
-#     user_id=job['user_id']
-#     sender=job['sender']
-#     full_summary=job['full_summary']
-#     job_info=""
-#     async with TaskSessionLocal() as db:
-#         print("SENDER IS",sender)
-#         if sender=="AI":
-#             try:
-#                 job_info=await get_job(db,job_id=user_id)
-#                 print(f"JOB INFO IS {job_info}")
-
-#                 response=job_info['response']
-
-#                 print("RESPONSE IS THIS ",response)
-
-#                 print("SENDING TO THE API BIG BOI")
-
-#                 return response
-
-                
-
-#                 """Send to the fucking API idk how but do it later obv"""
-
-
-#             except Exception as e:
-#                 print("ERROR FACED",e)
-#             finally:
-#                 await engine.dispose()
-
-# @app.task
-# def send_to_hell(job):
-#     return asyncio.run(redis_celery_postgresql_api(job))
-
+            await engine.dispose()      
 
 
 @celery_app.task
 def process_video_summary(job):
     return asyncio.run(asynchronous_process(job))
-
-# @app.task
-# def msg_redis_postgresql_api(job):
-
-
-
-
-
