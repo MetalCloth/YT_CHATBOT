@@ -5,6 +5,7 @@ from langchain_groq import ChatGroq
 from ai_core.prompts import dividing_prompt
 import os
 import json
+from langchain_google_genai import ChatGoogleGenerativeAI
 import yt_dlp
 from dotenv import load_dotenv
 from typing import List,Optional
@@ -45,7 +46,7 @@ class Sections(BaseModel):
 parser = PydanticOutputParser(pydantic_object=Sections)
 
 
-model=ChatOllama(model='llama3')
+model = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
 prompt=ChatPromptTemplate.from_template(
     '''You are a summarizer agent who will summarize the given text AND ALSO JUST GIVE SUMMARY DONT TRY TO MAKE CONVERSATION LIKE 'HERE IS THE SUMMARY TYPE' THING AND ALSO MAKE SUMMARY SUCH THAT MAIN THINGS ARE NOT LOST 

@@ -5,15 +5,12 @@ from requests import Request
 
 from fastapi import FastAPI,Depends,WebSocket,HTTPException
 from ai_core.utils import PreProcessing
-# from workers.task import qa_app, summary_app # No longer needed here
 import time
 import redis.asyncio as aioredis
-from contextlib import asynccontextmanager # <-- IMPORT THIS
 
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 
-# <--- MODIFIED: Importing all our new DB functions --->
 from database.session import (
     create_job, update_job_status, create_table, get_job, engine, 
     AsyncSessionLocal, add_chat_message,
@@ -34,7 +31,7 @@ api=FastAPI()
 
 
 class StartChatPayload(BaseModel):
-    user_id: str # The stable user ID (e.g., 'e123')
+    user_id: str 
 
 class AddVideoPayload(BaseModel):
     video_id: Optional[str] = None
@@ -84,6 +81,7 @@ async def start_new_chat(payload: StartChatPayload, db:AsyncSession=Depends(get_
         raise HTTPException(status_code=500, detail="Could not start chat session.")
 
 
+
 @api.post('/chat/{session_id}/add')
 async def add_videos_to_chat(session_id: str, payload: AddVideoPayload):
     """
@@ -109,7 +107,6 @@ async def add_videos_to_chat(session_id: str, payload: AddVideoPayload):
         if not video_ids_to_add:
             raise HTTPException(status_code=400, detail="No valid videos found to add.")
 
-        ### adding videos to session_redis 
         add_videos_to_session_redis(r, session_id, video_ids_to_add)
 
         return {
@@ -172,6 +169,62 @@ async def ask_question(session_id: str, payload: AskQuestionPayload, db:AsyncSes
         raise HTTPException(status_code=500, detail="Could not process question.")
 
 
+# @api.websocket('/ws/status/{job_id}')
+# async def websocket_endpoint(websocket:WebSocket,job_id:str):
+#     """"Gonna dismantel the redis_listener into splitted personality and not a fucking funcition"""
+#     import os
+#     await websocket.accept()
+#     os.environ['REDIS_API_KEY'] = os.getenv('REDIS_API_KEY')
+
+#     print("STHIS MESSAGE IS FROM ROUTES.PY  ERVER ONLINE")
+
+#     redis_url = f"redis://default:{os.getenv('REDIS_API_KEY')}@redis-12857.c62.us-east-1-4.ec2.redns.redis-cloud.com:12857/0"
+#     r = aioredis.from_url(redis_url, decode_responses=True)
+
+#     pubsub = r.pubsub()
+#     await pubsub.subscribe('from_redis')
+
+#     print("STHIS MESSAGE IS FROM ROUTES.PY  UBSCRIBED TO REDIS BY API  {job_id}NOW LISTENING")
+
+#     try:
+#         async for message in pubsub.listen():
+#             if message['type']=='message':
+#                 channel=message['channel']
+#                 print("CTHIS MESSAGE IS FROM ROUTES.PY  HANNEL NAME IS",channel)
+#                 job_data = json.loads(message["data"])
+
+#                 if job_data['user_id']!=job_id:
+#                     continue
+
+
+#                 print("STHIS MESSAGE IS FROM ROUTES.PY  ENDING TO CELERY")
+                
+                
+#                 print(f'THIS MESSAGE IS FROM ROUTES.PY  New message on channel "from redis"')
+
+#                 summary=""
+#                 async with AsyncSessionLocal() as db:
+#                         job_info = await get_job(db, job_id=job_id)
+#                         if job_info:
+#                             summary = job_info['response'] 
+                    
+#                 await r.blpop(job_data['user_id'],timeout=0)
+
+#                 print("GTHIS MESSAGE IS FROM ROUTES.PY  OT THE SUMMMARY BABYYYYYY",summary)
+#                 await websocket.send_text(summary)
+#                 break
+
+#     except Exception as e:
+#         print("ETHIS MESSAGE IS FROM ROUTES.PY  RROR OCCURED IN WEBSOCKET",e)
+
+#     finally:
+#         print(f"THIS MESSAGE IS FROM ROUTES.PY  Client  disconnecting.")
+#         await pubsub.unsubscribe('from_redis')
+#         await r.close()
+#         await websocket.close()
+
+# In routes.py
+
 @api.websocket('/ws/status/{job_id}')
 async def websocket_endpoint(websocket:WebSocket,job_id:str):
     """"Gonna dismantel the redis_listener into splitted personality and not a fucking funcition"""
@@ -179,31 +232,38 @@ async def websocket_endpoint(websocket:WebSocket,job_id:str):
     await websocket.accept()
     os.environ['REDIS_API_KEY'] = os.getenv('REDIS_API_KEY')
 
-    print("STHIS MESSAGE IS FROM ROUTES.PY  ERVER ONLINE")
+    from workers.celery_app import process_video_summary
+    print("SERVER ONLINE")
 
+    # --- FIX #1: CHECK FIRST ---
+    # Check if the job is *already* done (catches race conditions)
+    async with AsyncSessionLocal() as db:
+        job_info = await get_job(db, job_id=job_id)
+        if job_info and (job_info['status'] == 'SUCCESS' or job_info['status'] == 'FAILED'):
+            print(f"Job {job_id} was already completed. Sending result immediately.")
+            await websocket.send_text(job_info['response'])
+            await websocket.close()
+            return # Exit
+
+    # --- IF NOT DONE, THEN LISTEN ---
     redis_url = f"redis://default:{os.getenv('REDIS_API_KEY')}@redis-12857.c62.us-east-1-4.ec2.redns.redis-cloud.com:12857/0"
     r = aioredis.from_url(redis_url, decode_responses=True)
-
     pubsub = r.pubsub()
     await pubsub.subscribe('from_redis')
 
-    print("STHIS MESSAGE IS FROM ROUTES.PY  UBSCRIBED TO REDIS BY API  {job_id}NOW LISTENING")
+    print(f"SUBSCRIBED TO REDIS BY API {job_id} NOW LISTENING")
 
     try:
         async for message in pubsub.listen():
             if message['type']=='message':
                 channel=message['channel']
-                print("CTHIS MESSAGE IS FROM ROUTES.PY  HANNEL NAME IS",channel)
+                print("CHANNEL NAME IS",channel)
                 job_data = json.loads(message["data"])
 
-                if job_data['user_id']!=job_id:
+                if job_data['user_id'] != job_id:
                     continue
-
-
-                print("STHIS MESSAGE IS FROM ROUTES.PY  ENDING TO CELERY")
                 
-                
-                print(f'THIS MESSAGE IS FROM ROUTES.PY  New message on channel "from redis"')
+                print(f'New message on channel "from redis" for our job_id')
 
                 summary=""
                 async with AsyncSessionLocal() as db:
@@ -211,17 +271,18 @@ async def websocket_endpoint(websocket:WebSocket,job_id:str):
                         if job_info:
                             summary = job_info['response'] 
                     
-                await r.blpop(job_data['user_id'],timeout=0)
+                # --- FIX #2: DELETE THE BLOCKING POP ---
+                # await r.blpop(job_data['user_id'],timeout=0) # <--- DELETED
 
-                print("GTHIS MESSAGE IS FROM ROUTES.PY  OT THE SUMMMARY BABYYYYYY",summary)
+                print("GOT THE SUMMMARY BABYYYYYY",summary)
                 await websocket.send_text(summary)
-                break
+                break # We're done, break the loop
 
     except Exception as e:
-        print("ETHIS MESSAGE IS FROM ROUTES.PY  RROR OCCURED IN WEBSOCKET",e)
+        print("ERROR OCCURED IN WEBSOCKET",e)
 
     finally:
-        print(f"THIS MESSAGE IS FROM ROUTES.PY  Client  disconnecting.")
+        print(f"Client {job_id} disconnecting.")
         await pubsub.unsubscribe('from_redis')
         await r.close()
         await websocket.close()

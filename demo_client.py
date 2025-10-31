@@ -1,7 +1,7 @@
 import websocket
 import time
 
-WS_URL = "ws://127.0.0.1:8000/ws/status/b6900726-324a-4fdf-b808-9fee10dd4c2f"
+WS_URL = "ws://127.0.0.1:8000/ws/status/525b9765-8da6-4f9f-ba93-823dadc0198b"
 
 print(f"CLIENT: Connecting to {WS_URL}...")
 
@@ -11,8 +11,6 @@ try:
     print("CLIENT: Connected!")
 
     # 2. Listen for messages in a loop
-    #    The 'ws.recv()' part will WAIT (block)
-    #    until the server sends something.
     while True:
         message = ws.recv() # This line waits...
         

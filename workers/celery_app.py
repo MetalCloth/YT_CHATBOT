@@ -25,16 +25,15 @@ celery_app = Celery(
 
 
 async def update_postgres(job_id: str, status: str, summary: str):
-    
     async with AsyncSessionLocal() as db:
         await update_job_status(db, job_id=job_id, status=status, summary=summary)
-        print(f"THIS MESSAGE IS FROM CELERY.PY CELERY WORKER: PostgreSQL update for job '{job_id}' complete.")
+        print(f"CELERY WORKER: PostgreSQL update for job '{job_id}' complete.")
 
 
 async def get_postgres_job(job_id: str):
     async with AsyncSessionLocal() as db:
         job=await get_job(db, job_id=job_id)
-        print(f"THIS MESSAGE IS FROM CELERY.PY CELERY WORKER: postgres job  '{job_id}' complete.")
+        print(f"CELERY WORKER: postgres job  '{job_id}' complete.")
         return job
 
 
@@ -50,8 +49,7 @@ async def asynchronous_process(job):
     job_id = job['user_id']        
     session_id = job['session_id'] 
     full_summary = job['full_summary']
-    
-    print(f"THIS MESSAGE IS FROM CELERY.PY --- Processing Job {job_id} for Session {session_id} ---")
+    playlist_id=job.get('playlist_id')
 
     job_info = ""
     async with TaskSessionLocal() as db:
@@ -71,27 +69,6 @@ async def asynchronous_process(job):
 
             print(f"THIS MESSAGE IS FROM CELERY.PY Retrieved {len(chat_history)} previous messages.")
 
-
-#  CREATE TABLE IF NOT EXISTS data (
-#             id SERIAL PRIMARY KEY,
-#             job_id TEXT UNIQUE NOT NULL,
-#             video_id TEXT NOT NULL,
-#             question TEXT,
-#             status TEXT NOT NULL,
-#             response TEXT,
-#             created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (NOW() at time zone 'utc')
-#         );
-
-            # if full_summary==True:
-            #     graph_state={
-            #         'video_id':video_id_string,
-            #         'playlist_id':None,
-            #         'chat_history':[],
-            #         'session_id':session_id,
-
-            #     }
-            
-            # else:
 
 
             graph_state = {
@@ -129,18 +106,42 @@ async def asynchronous_process(job):
                 sender="AI",
                 session_id=session_id
             )
+
             msg_to_redis(r, job_id, value, channel='from_redis')
 
             print(f"THIS MESSAGE IS FROM CELERY.PY --- Job {job_id} Processed Successfully ---")
             return {"response": final_answer_text}
 
         except Exception as e:
+
             return {"response": f"Error -> {e}"} 
 
         finally:
-            await engine.dispose()      
+            await engine.dispose()
 
 
 @celery_app.task
 def process_video_summary(job):
     return asyncio.run(asynchronous_process(job))
+
+
+#  CREATE TABLE IF NOT EXISTS data (
+#             id SERIAL PRIMARY KEY,
+#             job_id TEXT UNIQUE NOT NULL,
+#             video_id TEXT NOT NULL,
+#             question TEXT,
+#             status TEXT NOT NULL,
+#             response TEXT,
+#             created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (NOW() at time zone 'utc')
+#         );
+
+            # if full_summary==True:
+            #     graph_state={
+            #         'video_id':video_id_string,
+            #         'playlist_id':None,
+            #         'chat_history':[],
+            #         'session_id':session_id,
+
+            #     }
+            
+            # else:

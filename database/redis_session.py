@@ -91,7 +91,7 @@ def add_videos_to_session_redis(r: redis.Redis, session_id: str, video_ids: List
 
 def get_session_videos_redis(r: redis.Redis, session_id: str) -> List[str]:
     """
-    Gets all unique video IDs from the 'study room' (a Redis SET).
+    Gets all unique video IDs from the session.
     """
     context_key = f"session_videos:{session_id}"
     video_ids = list(r.smembers(context_key))
@@ -99,6 +99,10 @@ def get_session_videos_redis(r: redis.Redis, session_id: str) -> List[str]:
     return video_ids
 
 
+# def delete_session_video(r:redis.Redis,session_id:str,video_id:str):
+#     """Delete a specific video or videos from the session"""
+
+#     session_id
 
 def redis_listener(r:redis.Redis):
     from workers.celery_app import process_video_summary
@@ -114,7 +118,6 @@ def redis_listener(r:redis.Redis):
         if message['type'] == 'message':
             channel=message['channel']
             job_data = json.loads(message["data"])
-            # The job_data now contains the 'session_id'
             
             print("STHIS MESSAGE IS FROM REDIS_SESSION.PY ENDING TO CELERY")
 
